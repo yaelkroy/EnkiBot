@@ -13,27 +13,23 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-
 # enkibot/core/language_service.py
+# enkibot/core/language_service.py
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+# (Ensure your GPLv3 header is here)
+
 import logging
 import json
 import os
 import re
 from typing import Dict, Any, Optional, List
 
-from telegram import Update # For type hinting update_context
+from telegram import Update 
 
-from langdetect import detect_langs, DetectorFactory
-from langdetect.lang_detect_exception import LangDetectException
-
-from enkibot import config # For default lang and lang_packs_dir
-from enkibot.core.llm_services import LLMServices # For translation
-from enkibot.utils.database import DatabaseManager # For fetching chat history
-
-try:
-    DetectorFactory.seed = 0
-except Exception as e:
-    logging.warning(f"Could not seed DetectorFactory for LanguageService: {e}")
+from enkibot import config 
+from enkibot.core.llm_services import LLMServices 
+from enkibot.utils.database import DatabaseManager 
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +45,7 @@ class LanguageService:
         self.db_manager = db_manager
         self.lang_packs_dir = lang_packs_dir
         self.default_language = default_lang
-        self.primary_fallback_lang = default_lang # Typically 'en'
+        self.primary_fallback_lang = default_lang 
         self.secondary_fallback_lang = "ru"
 
         self.language_packs: Dict[str, Dict[str, Any]] = {}
@@ -61,7 +57,7 @@ class LanguageService:
         self.current_response_strings: Dict[str, str] = {}
         self.current_lang_pack_full: Dict[str, Any] = {}
 
-        self._load_language_packs() # This will also set initial current_lang context
+        self._load_language_packs() 
         logger.info("LanguageService __init__ COMPLETED")
 
     def _load_language_packs(self):
@@ -94,10 +90,8 @@ class LanguageService:
         
         self._set_current_language_internals(self.default_language)
 
-
     def _set_current_language_internals(self, lang_code_to_set: str):
         chosen_lang_code = lang_code_to_set
-
         if chosen_lang_code not in self.language_packs:
             logger.warning(f"Language pack for initially requested '{chosen_lang_code}' not found.")
             if self.primary_fallback_lang in self.language_packs:
@@ -113,7 +107,9 @@ class LanguageService:
             else: 
                 logger.critical("CRITICAL: No language packs loaded at all. Service may be impaired.")
                 self.current_lang = "none" 
-                self.current_lang_pack_full = {}; self.current_llm_prompt_sets = {}; self.current_response_strings = {}
+                self.current_lang_pack_full = {}
+                self.current_llm_prompt_sets = {}
+                self.current_response_strings = {}
                 return
 
         self.current_lang = chosen_lang_code
@@ -132,7 +128,7 @@ class LanguageService:
         if english_pack_key not in self.language_packs:
             logger.error(f"Cannot create new language pack: Source English ('{english_pack_key}') pack not found.")
             if update_context and update_context.effective_message:
-                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback", # Use get_response_string
+                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback", 
                                                                                            "My apologies, I'm having trouble setting up support for this language right now (missing base files)."))
             return False
 
@@ -152,9 +148,8 @@ class LanguageService:
         
         translated_content_str: Optional[str] = None
         try:
-            # Using a specific model for translation might be good. config.OPENAI_MODEL_ID is used for general tasks.
-            # Consider a dedicated translation model if available, or ensure the general one is capable.
-            translator_model_id = config.OPENAI_MODEL_ID # Or a specific one like "gpt-4o-mini"
+            translator_model_id = config.OPENAI_TRANSLATION_MODEL_ID 
+            logger.info(f"Using model {translator_model_id} for language pack translation to {new_lang_code}")
             translated_content_str = await self.llm_services.call_openai_llm(
                 messages_for_api, model_id=translator_model_id, 
                 temperature=0.1, max_tokens=4000, **response_format_arg
@@ -221,115 +216,139 @@ class LanguageService:
                                          current_message_text: Optional[str], 
                                          chat_id: Optional[int], 
                                          update_context: Optional[Update] = None) -> str:
-        """
-        Determines language using current message and chat history, sets context,
-        and attempts to create new language packs if needed.
-        """
-        CONFIDENCE_THRESHOLD = 0.60
-        NUM_RECENT_MESSAGES_FOR_DETECTION = 3
-        MIN_AGGREGATED_TEXT_LENGTH = 20
+        LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD = 0.70  
+        NUM_RECENT_MESSAGES_FOR_CONTEXT = 2 
+        MIN_MESSAGE_LENGTH_FOR_LLM_INPUT = 5 
+        MIN_AGGREGATED_TEXT_LENGTH_FOR_LLM = 15
 
-        candidate_lang_code = self.current_lang if self.current_lang != "none" else self.default_language
+        final_candidate_lang_code = self.current_lang if self.current_lang != "none" else self.default_language
         
-        texts_for_detection: List[str] = []
-        if current_message_text and current_message_text.strip():
-            texts_for_detection.append(current_message_text.strip())
+        lang_detector_prompts = self.get_llm_prompt_set("language_detector_llm")
 
-        if chat_id and (not texts_for_detection or len(texts_for_detection[0]) < 50): 
-            logger.debug(f"Fetching last {NUM_RECENT_MESSAGES_FOR_DETECTION} messages from chat {chat_id} for lang detection.")
+        if not (lang_detector_prompts and "system" in lang_detector_prompts and \
+                lang_detector_prompts.get("user_template_full_context") and \
+                lang_detector_prompts.get("user_template_latest_only") ):
+            logger.error("LLM language detector prompts are incomplete/missing. Using current/default logic for language.")
+            # No LLM detection possible, just ensure current lang is set via fallbacks
+            self._set_current_language_internals(final_candidate_lang_code)
+            return self.current_lang
+
+        history_context_str = ""
+        latest_message_payload = current_message_text or "" 
+
+        if chat_id and (not latest_message_payload.strip() or len(latest_message_payload.strip()) < MIN_MESSAGE_LENGTH_FOR_LLM_INPUT):
+            logger.debug(f"Current msg short or absent, fetching {NUM_RECENT_MESSAGES_FOR_CONTEXT} recent msgs from chat {chat_id}.")
             try:
                 if self.db_manager:
-                    recent_messages = await self.db_manager.get_recent_chat_texts(chat_id, limit=NUM_RECENT_MESSAGES_FOR_DETECTION)
+                    recent_messages = await self.db_manager.get_recent_chat_texts(chat_id, limit=NUM_RECENT_MESSAGES_FOR_CONTEXT)
                     if recent_messages:
-                        texts_for_detection.extend(recent_messages) 
-                        logger.debug(f"Fetched {len(recent_messages)} messages. Total texts for detection: {len(texts_for_detection)}")
-                else: logger.warning("db_manager not available in determine_language_context.")
-            except Exception as e: logger.error(f"Error fetching recent chat texts: {e}", exc_info=True)
+                        history_context_str = "\n".join(recent_messages)
+                        logger.debug(f"Fetched {len(recent_messages)} messages for lang detection context.")
+                else: logger.warning("db_manager not available in determine_language_context for history fetch.")
+            except Exception as e: logger.error(f"Error fetching recent chat texts for lang detection: {e}", exc_info=True)
         
-        aggregated_text = " . ".join(reversed(texts_for_detection)).strip()
-        logger.debug(f"Aggregated text for lang detection (len {len(aggregated_text)}): '{aggregated_text[:100]}...'")
+        user_prompt_template_key = "user_template_full_context" if history_context_str else "user_template_latest_only"
+        user_prompt_template = lang_detector_prompts[user_prompt_template_key] # We checked existence above
+            
+        user_prompt_for_llm_detector = user_prompt_template.format(
+            latest_message=latest_message_payload, 
+            history_context=history_context_str 
+        )
+            
+        messages_for_llm_detector = [
+            {"role": "system", "content": lang_detector_prompts["system"]},
+            {"role": "user", "content": user_prompt_for_llm_detector}
+        ]
 
-        detected_languages_with_probs: List[Any] = []
-        attempted_new_detection_on_aggregated = False
+        llm_detected_primary_lang: Optional[str] = None
+        llm_detected_confidence: float = 0.0
+        
+        aggregated_text_for_llm_prompt_check = f"{history_context_str}\n{latest_message_payload}".strip()
 
-        if aggregated_text and len(aggregated_text) >= MIN_AGGREGATED_TEXT_LENGTH:
-            attempted_new_detection_on_aggregated = True
+        if aggregated_text_for_llm_prompt_check and len(aggregated_text_for_llm_prompt_check) >= MIN_AGGREGATED_TEXT_LENGTH_FOR_LLM:
             try:
-                detected_languages_with_probs = detect_langs(aggregated_text)
-                logger.info(f"LangDetect results on aggregated text: {detected_languages_with_probs}")
-            except Exception as e: 
-                logger.warning(f"LangDetect error on aggregated text: {e}. Current candidate: '{candidate_lang_code}'.")
-        else:
-            logger.info(f"Aggregated text too short. Using current candidate: '{candidate_lang_code}'.")
-
-        chosen_lang_from_detection = None
-        if detected_languages_with_probs:
-            for lang_obj in sorted(detected_languages_with_probs, key=lambda x: x.prob, reverse=True):
-                lang_code_detected, lang_prob = lang_obj.lang, lang_obj.prob
-                logger.debug(f"Checking detected lang: {lang_code_detected} with prob: {lang_prob:.3f}")
-                if lang_prob >= CONFIDENCE_THRESHOLD:
-                    if lang_code_detected in self.language_packs:
-                        logger.info(f"Using existing pack for detected '{lang_code_detected}' (prob: {lang_prob:.3f}).")
-                        chosen_lang_from_detection = lang_code_detected
-                        break 
-                    elif chosen_lang_from_detection is None: 
-                        chosen_lang_from_detection = lang_code_detected
-                        logger.info(f"High-confidence lang '{lang_code_detected}' (prob {lang_prob:.3f}) is candidate for creation.")
-                else: break 
-        
-        if chosen_lang_from_detection:
-            candidate_lang_code = chosen_lang_from_detection
-            logger.info(f"Candidate language after detection: '{candidate_lang_code}'")
-        else:
-            logger.info(f"No suitable language from detection. Sticking with candidate: '{candidate_lang_code}'")
-
-        if candidate_lang_code not in self.language_packs:
-            if attempted_new_detection_on_aggregated or candidate_lang_code != self.current_lang :
-                logger.warning(f"Language '{candidate_lang_code}' pack not found. Attempting creation.")
-                if await self._create_and_load_language_pack(candidate_lang_code, update_context=update_context):
-                    self._set_current_language_internals(candidate_lang_code)
+                detection_model_id = config.OPENAI_CLASSIFICATION_MODEL_ID 
+                logger.info(f"Requesting LLM language detection with model {detection_model_id} for text: '{aggregated_text_for_llm_prompt_check[:70]}...'")
+                
+                completion_str = await self.llm_services.call_openai_llm(
+                    messages_for_llm_detector, model_id=detection_model_id,
+                    temperature=0.0, max_tokens=150, response_format={"type": "json_object"}
+                )
+                if completion_str:
+                    try:
+                        detection_result = json.loads(completion_str)
+                        logger.info(f"LLM language detection response: {detection_result}")
+                        llm_detected_primary_lang = str(detection_result.get("primary_lang", "")).lower()
+                        confidence_val = detection_result.get("confidence", 0.0)
+                        try: llm_detected_confidence = float(confidence_val)
+                        except (ValueError, TypeError): llm_detected_confidence = 0.0
+                    except json.JSONDecodeError as e:
+                         logger.error(f"Failed to decode JSON from LLM lang detector: {e}. Raw: {completion_str}")
                 else:
-                    logger.warning(f"Failed to create pack for '{candidate_lang_code}'. Applying fallbacks.")
-                    self._set_current_language_internals(self.default_language)
-            else:
-                logger.info(f"Pack for current/default candidate '{candidate_lang_code}' missing. Applying fallbacks.")
-                self._set_current_language_internals(self.default_language)
-        else: 
-            self._set_current_language_internals(candidate_lang_code)
-        
-        return self.current_lang
+                    logger.warning("LLM language detector returned no content.")
+            except Exception as e:
+                logger.error(f"Error calling LLM for language detection: {e}", exc_info=True)
+        else:
+            logger.info(f"Not enough aggregated text ('{aggregated_text_for_llm_prompt_check[:50]}...') for LLM language detection. Using current/default logic.")
 
+        # Logic to use LLM detection result
+        if llm_detected_primary_lang and llm_detected_confidence >= LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD:
+            logger.info(f"LLM confidently detected primary lang '{llm_detected_primary_lang}' (conf: {llm_detected_confidence:.2f}).")
+            final_candidate_lang_code = llm_detected_primary_lang
+        else:
+            if llm_detected_primary_lang: 
+                 logger.warning(f"LLM detected lang '{llm_detected_primary_lang}' but confidence ({llm_detected_confidence:.2f}) "
+                               f"< threshold ({LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD}). Using current/default: {final_candidate_lang_code}")
+            # If no LLM detection or low confidence, final_candidate_lang_code remains as initialized (current or default)
+        
+        # Set language context based on final_candidate_lang_code
+        if final_candidate_lang_code not in self.language_packs:
+            logger.warning(f"Language pack for candidate '{final_candidate_lang_code}' not found. Attempting creation.")
+            if await self._create_and_load_language_pack(final_candidate_lang_code, update_context=update_context):
+                self._set_current_language_internals(final_candidate_lang_code)
+            else: 
+                logger.warning(f"Failed to create pack for '{final_candidate_lang_code}'. Applying prioritized fallbacks.")
+                self._set_current_language_internals(self.default_language) 
+        else: 
+            self._set_current_language_internals(final_candidate_lang_code)
+            
+        return self.current_lang
+    
     def get_llm_prompt_set(self, key: str) -> Optional[Dict[str, str]]:
         current_prompts_to_check = self.current_llm_prompt_sets
         prompt_set = current_prompts_to_check.get(key)
-        
+        primary_fallback_lang = self.default_language
+        secondary_fallback_lang = "ru"
+
         if not prompt_set: 
-            logger.debug(f"LLM prompt set key '{key}' not in '{self.current_lang}'. Trying '{self.primary_fallback_lang}'.")
-            current_prompts_to_check = self.llm_prompt_sets.get(self.primary_fallback_lang, {})
+            logger.debug(f"LLM prompt set key '{key}' not in current lang '{self.current_lang}'. Trying '{primary_fallback_lang}'.")
+            current_prompts_to_check = self.llm_prompt_sets.get(primary_fallback_lang, {})
             prompt_set = current_prompts_to_check.get(key)
-            if not prompt_set and self.primary_fallback_lang != self.secondary_fallback_lang: 
-                 logger.debug(f"LLM prompt set key '{key}' not in '{self.primary_fallback_lang}'. Trying '{self.secondary_fallback_lang}'.")
-                 current_prompts_to_check = self.llm_prompt_sets.get(self.secondary_fallback_lang, {})
+            if not prompt_set and primary_fallback_lang != secondary_fallback_lang: 
+                 logger.debug(f"LLM prompt set key '{key}' not in '{primary_fallback_lang}'. Trying '{secondary_fallback_lang}'.")
+                 current_prompts_to_check = self.llm_prompt_sets.get(secondary_fallback_lang, {})
                  prompt_set = current_prompts_to_check.get(key)
         
         if not prompt_set:
             logger.error(f"LLM prompt set for key '{key}' ultimately not found.")
             return None
         if not isinstance(prompt_set, dict) or "system" not in prompt_set: 
-            logger.error(f"LLM prompt set for key '{key}' (found) is malformed: {prompt_set}")
+            logger.error(f"LLM prompt set for key '{key}' (found in lang or fallback) is malformed: {prompt_set}")
             return None
         return prompt_set
 
     def get_response_string(self, key: str, default_value: Optional[str] = None, **kwargs) -> str:
         raw_string = self.current_response_strings.get(key)
         lang_tried = self.current_lang
+        primary_fallback_lang = self.default_language
+        secondary_fallback_lang = "ru"
 
         if raw_string is None: 
-            lang_tried = self.primary_fallback_lang
-            raw_string = self.response_strings.get(self.primary_fallback_lang, {}).get(key)
-            if raw_string is None and self.primary_fallback_lang != self.secondary_fallback_lang: 
-                lang_tried = self.secondary_fallback_lang
-                raw_string = self.response_strings.get(self.secondary_fallback_lang, {}).get(key)
+            lang_tried = primary_fallback_lang
+            raw_string = self.response_strings.get(primary_fallback_lang, {}).get(key)
+            if raw_string is None and primary_fallback_lang != secondary_fallback_lang: 
+                lang_tried = secondary_fallback_lang
+                raw_string = self.response_strings.get(secondary_fallback_lang, {}).get(key)
 
         if raw_string is None: 
             if default_value is not None: raw_string = default_value
@@ -338,7 +357,7 @@ class LanguageService:
         try:
             return raw_string.format(**kwargs) if kwargs else raw_string
         except KeyError as e:
-            logger.error(f"Missing format key '{e}' in response for '{key}' (lang tried: {lang_tried}, raw: '{raw_string}')")
+            logger.error(f"Missing format key '{e}' in response string for key '{key}' (lang tried: {lang_tried}, raw: '{raw_string}')")
             english_raw = self.response_strings.get("en", {}).get(key, f"[[Format error & missing English for key: {key}]]")
             try: return english_raw.format(**kwargs) if kwargs else english_raw
-            except KeyError: return f"[[Formatting error for response key: {key} - check placeholders]]"
+            except KeyError: return f"[[Formatting error for response key: {key} - check placeholders/English pack]]"

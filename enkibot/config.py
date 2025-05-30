@@ -41,11 +41,13 @@ DB_CONNECTION_STRING = (
 # --- LLM Provider API Keys & Models ---
 # OpenAI
 OPENAI_API_KEY = os.getenv('ENKI_BOT_OPENAI_API_KEY')
-OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4o-mini')
+OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4o-mini')                 # General purpose (if not overridden by task-specific models)
+OPENAI_CLASSIFICATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_CLASSIFICATION_MODEL_ID', 'gpt-3.5-turbo') # For faster tasks like intent classification
+OPENAI_TRANSLATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_TRANSLATION_MODEL_ID', 'gpt-4o-mini')      # For language pack creation
 
 # Groq
 GROQ_API_KEY = os.getenv('ENKI_BOT_GROQ_API_KEY')
-GROQ_MODEL_ID = os.getenv('ENKI_BOT_GROQ_MODEL_ID', 'llama3-8b-8192')
+GROQ_MODEL_ID = os.getenv('ENKI_BOT_GROQ_MODEL_ID', 'llama-3.3-70b-versatile')
 GROQ_ENDPOINT_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # OpenRouter

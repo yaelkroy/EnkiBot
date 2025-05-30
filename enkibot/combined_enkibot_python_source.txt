@@ -1230,13 +1230,138 @@ if __name__ == '__main__':
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/__init__.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # This file intentionally left blank.
+
+
+======================================================================
+--- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/app.py ---
+======================================================================
+
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# enkibot/app.py
+import logging
+from telegram.ext import Application
+
+from enkibot import config
+from enkibot.utils.database import DatabaseManager
+from enkibot.core.llm_services import LLMServices
+from enkibot.core.language_service import LanguageService
+from enkibot.modules.intent_recognizer import IntentRecognizer
+from enkibot.modules.profile_manager import ProfileManager
+from enkibot.modules.api_router import ApiRouter
+from enkibot.modules.response_generator import ResponseGenerator
+from enkibot.core.telegram_handlers import TelegramHandlerService
+
+logger = logging.getLogger(__name__)
+
+class EnkiBotApplication:
+    def __init__(self, ptb_application: Application):
+        logger.info("EnkiBotApplication initializing...")
+        self.ptb_application = ptb_application
+
+        # Initialize core services
+        self.db_manager = DatabaseManager(config.DB_CONNECTION_STRING)
+        self.llm_services = LLMServices(
+            openai_api_key=config.OPENAI_API_KEY, openai_model_id=config.OPENAI_MODEL_ID,
+            groq_api_key=config.GROQ_API_KEY, groq_model_id=config.GROQ_MODEL_ID, groq_endpoint_url=config.GROQ_ENDPOINT_URL,
+            openrouter_api_key=config.OPENROUTER_API_KEY, openrouter_model_id=config.OPENROUTER_MODEL_ID, openrouter_endpoint_url=config.OPENROUTER_ENDPOINT_URL,
+            google_ai_api_key=config.GOOGLE_AI_API_KEY, google_ai_model_id=config.GOOGLE_AI_MODEL_ID
+        )
+        self.language_service = LanguageService(
+            llm_services=self.llm_services, 
+            db_manager=self.db_manager # Pass db_manager for fetching chat history
+        )
+        
+        # Initialize functional modules/services
+        self.intent_recognizer = IntentRecognizer(self.llm_services)
+        self.profile_manager = ProfileManager(self.llm_services, self.db_manager)
+        self.api_router = ApiRouter(
+            weather_api_key=config.WEATHER_API_KEY, 
+            news_api_key=config.NEWS_API_KEY,
+            llm_services=self.llm_services
+        )
+        self.response_generator = ResponseGenerator(
+            self.llm_services, 
+            self.db_manager, 
+            self.intent_recognizer
+        )
+
+        # Initialize Telegram handlers, passing all necessary services
+        self.handler_service = TelegramHandlerService(
+            application=self.ptb_application,
+            db_manager=self.db_manager,
+            llm_services=self.llm_services,
+            intent_recognizer=self.intent_recognizer,
+            profile_manager=self.profile_manager,
+            api_router=self.api_router,
+            response_generator=self.response_generator,
+            language_service=self.language_service,
+            allowed_group_ids=config.ALLOWED_GROUP_IDS, # Pass as set
+            bot_nicknames=config.BOT_NICKNAMES_TO_CHECK # Pass as list
+        )
+        
+        logger.info("EnkiBotApplication initialized all services.")
+
+    def register_handlers(self):
+        """Registers all Telegram handlers."""
+        self.handler_service.register_all_handlers()
+        logger.info("EnkiBotApplication: All handlers registered with PTB Application.")
+
+    def run(self):
+        """Starts the bot polling."""
+        logger.info("EnkiBotApplication: Starting PTB Application polling...")
+        self.ptb_application.run_polling(allowed_updates=Update.ALL_TYPES)
+        logger.info("EnkiBotApplication: Polling stopped.")
 
 
 ======================================================================
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/combine_files.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 import os
 import logging
 
@@ -1334,7 +1459,22 @@ if __name__ == '__main__':
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/config.py ---
 ======================================================================
 
-﻿# ==================================================================================================
+﻿# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# ==================================================================================================
 # === EnkiBot Configuration ===
 # ==================================================================================================
 # Central configuration file for API keys, model IDs, database settings, and other constants.
@@ -1362,7 +1502,9 @@ DB_CONNECTION_STRING = (
 # --- LLM Provider API Keys & Models ---
 # OpenAI
 OPENAI_API_KEY = os.getenv('ENKI_BOT_OPENAI_API_KEY')
-OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4o-mini')
+OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4o-mini')                 # General purpose (if not overridden by task-specific models)
+OPENAI_CLASSIFICATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_CLASSIFICATION_MODEL_ID', 'gpt-3.5-turbo') # For faster tasks like intent classification
+OPENAI_TRANSLATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_TRANSLATION_MODEL_ID', 'gpt-4o-mini')      # For language pack creation
 
 # Groq
 GROQ_API_KEY = os.getenv('ENKI_BOT_GROQ_API_KEY')
@@ -1406,98 +1548,107 @@ LANGUAGE_PACKS_DIR = os.path.join(os.path.dirname(__file__), 'lang')
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/core/__init__.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 # This file makes the 'core' directory a Python package.
 
 
 ======================================================================
---- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/core/bot.py ---
+--- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/core/language_service.py ---
 ======================================================================
 
-﻿# enkibot/core/bot.py
-# ==================================================================================================
-# === EnkiBot - Main Bot Logic ===
-# ==================================================================================================
-
-# print(f"***** EXECUTING BOT.PY - VERSION: {__file__} *****") 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# enkibot/core/language_service.py
 
 import logging
 import json
 import os
 import re
-import asyncio
-from typing import Dict, Any, Optional, Tuple, List 
+from typing import Dict, Any, Optional, List
 
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from telegram.constants import ChatAction
+from telegram import Update 
 
-from langdetect import detect, DetectorFactory, detect_langs # Import detect_langs
-from langdetect.lang_detect_exception import LangDetectException
+# We are replacing langdetect with LLM-based detection primarily
+# from langdetect import detect_langs, DetectorFactory 
+# from langdetect.lang_detect_exception import LangDetectException
 
 from enkibot import config 
-from enkibot.utils.database import DatabaseManager
-from enkibot.core.llm_services import LLMServices
-from enkibot.modules.intent_recognizer import IntentRecognizer
-from enkibot.modules.profile_manager import ProfileManager
-from enkibot.modules.api_router import ApiRouter
-from enkibot.modules.response_generator import ResponseGenerator
-
-try:
-    DetectorFactory.seed = 0 
-except Exception as e:
-    logging.warning(f"Could not seed DetectorFactory (this is okay if it's already seeded): {e}")
+from enkibot.core.llm_services import LLMServices 
+from enkibot.utils.database import DatabaseManager 
 
 logger = logging.getLogger(__name__)
-ASK_CITY = 1
 
-class EnkiBot:
-    def __init__(self, application: Application):
-        logger.info("EnkiBot __init__ STARTING")
-
-        self.application = application
-        self.db_manager = DatabaseManager(config.DB_CONNECTION_STRING)
-        self.llm_services = LLMServices(
-            openai_api_key=config.OPENAI_API_KEY, openai_model_id=config.OPENAI_MODEL_ID,
-            groq_api_key=config.GROQ_API_KEY, groq_model_id=config.GROQ_MODEL_ID, groq_endpoint_url=config.GROQ_ENDPOINT_URL,
-            openrouter_api_key=config.OPENROUTER_API_KEY, openrouter_model_id=config.OPENROUTER_MODEL_ID, openrouter_endpoint_url=config.OPENROUTER_ENDPOINT_URL,
-            google_ai_api_key=config.GOOGLE_AI_API_KEY, google_ai_model_id=config.GOOGLE_AI_MODEL_ID
-        )
-        self.intent_recognizer = IntentRecognizer(self.llm_services)
-        self.profile_manager = ProfileManager(self.llm_services, self.db_manager)
-        self.api_router = ApiRouter(
-            weather_api_key=config.WEATHER_API_KEY, news_api_key=config.NEWS_API_KEY,
-            llm_services=self.llm_services
-        )
-        self.response_generator = ResponseGenerator(self.llm_services, self.db_manager, self.intent_recognizer)
+class LanguageService:
+    def __init__(self, 
+                 llm_services: LLMServices, 
+                 db_manager: DatabaseManager,
+                 lang_packs_dir: str = config.LANGUAGE_PACKS_DIR, 
+                 default_lang: str = config.DEFAULT_LANGUAGE):
+        
+        logger.info("LanguageService __init__ STARTING")
+        self.llm_services = llm_services
+        self.db_manager = db_manager
+        self.lang_packs_dir = lang_packs_dir
+        self.default_language = default_lang
+        self.primary_fallback_lang = default_lang 
+        self.secondary_fallback_lang = "ru"
 
         self.language_packs: Dict[str, Dict[str, Any]] = {}
         self.llm_prompt_sets: Dict[str, Dict[str, Dict[str, str]]] = {}
         self.response_strings: Dict[str, Dict[str, str]] = {}
         
-        self.current_lang: str = config.DEFAULT_LANGUAGE
+        self.current_lang: str = self.default_language
         self.current_llm_prompt_sets: Dict[str, Dict[str, str]] = {}
         self.current_response_strings: Dict[str, str] = {}
         self.current_lang_pack_full: Dict[str, Any] = {}
 
-        self._load_language_packs()
-        self.pending_action_data: Dict[int, Dict[str, Any]] = {}
-        logger.info("EnkiBot __init__ COMPLETED")
+        self._load_language_packs() 
+        logger.info("LanguageService __init__ COMPLETED")
 
     def _load_language_packs(self):
         self.language_packs = {}
         self.llm_prompt_sets = {}
         self.response_strings = {}
-        if not os.path.exists(config.LANGUAGE_PACKS_DIR):
-            logger.error(f"Language packs directory not found: {config.LANGUAGE_PACKS_DIR}")
+        if not os.path.exists(self.lang_packs_dir):
+            logger.error(f"Language packs directory not found: {self.lang_packs_dir}")
             try:
-                os.makedirs(config.LANGUAGE_PACKS_DIR, exist_ok=True)
-                logger.info(f"Created language packs directory: {config.LANGUAGE_PACKS_DIR}")
+                os.makedirs(self.lang_packs_dir, exist_ok=True)
+                logger.info(f"Created language packs directory: {self.lang_packs_dir}")
             except OSError as e:
-                logger.error(f"Could not create language packs directory {config.LANGUAGE_PACKS_DIR}: {e}")
-        for lang_file in os.listdir(config.LANGUAGE_PACKS_DIR):
+                logger.error(f"Could not create language packs directory {self.lang_packs_dir}: {e}")
+        
+        for lang_file in os.listdir(self.lang_packs_dir):
             if lang_file.endswith(".json"):
                 lang_code = lang_file[:-5]
-                file_path = os.path.join(config.LANGUAGE_PACKS_DIR, lang_file)
+                file_path = os.path.join(self.lang_packs_dir, lang_file)
                 try:
                     with open(file_path, 'r', encoding='utf-8-sig') as f: 
                         pack_content = json.load(f)
@@ -1506,34 +1657,30 @@ class EnkiBot:
                         self.response_strings[lang_code] = pack_content.get("responses", {})
                         logger.info(f"Successfully loaded language pack: {lang_code} from {file_path}")
                 except json.JSONDecodeError as jde:
-                    logger.error(f"Error decoding JSON from language file: {lang_file}. Error: {jde.msg} at line {jde.lineno} col {jde.colno} (char {jde.pos})", exc_info=False)
+                    logger.error(f"Error decoding JSON from lang file: {lang_file}. Error: {jde.msg} at L{jde.lineno} C{jde.colno} (char {jde.pos})", exc_info=False)
                 except Exception as e:
                     logger.error(f"Error loading language file {lang_file}: {e}", exc_info=True)
-        self._set_current_language_internals(config.DEFAULT_LANGUAGE)
+        
+        self._set_current_language_internals(self.default_language)
 
     def _set_current_language_internals(self, lang_code_to_set: str):
-        primary_fallback_lang = config.DEFAULT_LANGUAGE 
-        secondary_fallback_lang = "ru"
         chosen_lang_code = lang_code_to_set
-
         if chosen_lang_code not in self.language_packs:
             logger.warning(f"Language pack for initially requested '{chosen_lang_code}' not found.")
-            if primary_fallback_lang in self.language_packs:
-                logger.info(f"Falling back to primary fallback: '{primary_fallback_lang}'.")
-                chosen_lang_code = primary_fallback_lang
-            elif secondary_fallback_lang in self.language_packs:
-                logger.info(f"Primary fallback '{primary_fallback_lang}' not found. Falling back to secondary: '{secondary_fallback_lang}'.")
-                chosen_lang_code = secondary_fallback_lang
+            if self.primary_fallback_lang in self.language_packs:
+                logger.info(f"Falling back to primary fallback: '{self.primary_fallback_lang}'.")
+                chosen_lang_code = self.primary_fallback_lang
+            elif self.secondary_fallback_lang in self.language_packs:
+                logger.info(f"Primary fallback '{self.primary_fallback_lang}' not found. Falling back to secondary: '{self.secondary_fallback_lang}'.")
+                chosen_lang_code = self.secondary_fallback_lang
             elif self.language_packs: 
                 first_available = next(iter(self.language_packs))
-                logger.error(f"Fallbacks ('{primary_fallback_lang}', '{secondary_fallback_lang}') not found. Using first available: '{first_available}'.")
+                logger.error(f"Fallbacks ('{self.primary_fallback_lang}', '{self.secondary_fallback_lang}') not found. Using first available: '{first_available}'.")
                 chosen_lang_code = first_available
             else: 
-                logger.critical("CRITICAL: No language packs loaded at all. Bot will not function correctly.")
+                logger.critical("CRITICAL: No language packs loaded at all. Service may be impaired.")
                 self.current_lang = "none" 
-                self.current_lang_pack_full = {}
-                self.current_llm_prompt_sets = {}
-                self.current_response_strings = {}
+                self.current_lang_pack_full = {}; self.current_llm_prompt_sets = {}; self.current_response_strings = {}
                 return
 
         self.current_lang = chosen_lang_code
@@ -1542,17 +1689,18 @@ class EnkiBot:
         self.current_response_strings = self.response_strings.get(chosen_lang_code, {})
         
         if not self.current_llm_prompt_sets and not self.current_response_strings:
-             logger.error(f"Language '{self.current_lang}' pack loaded, but it has no 'prompts' or 'responses' sections defined.")
+             logger.error(f"Language '{self.current_lang}' pack loaded, but it seems empty (no 'prompts' or 'responses').")
         else:
-            logger.info(f"Successfully set current language context to: '{self.current_lang}'")
+            logger.info(f"LanguageService: Successfully set current language context to: '{self.current_lang}'")
 
     async def _create_and_load_language_pack(self, new_lang_code: str, update_context: Optional[Update] = None) -> bool:
-        logger.info(f"Attempting to create language pack for new language: {new_lang_code}")
+        logger.info(f"LanguageService: Attempting to create language pack for new language: {new_lang_code}")
         english_pack_key = "en"
         if english_pack_key not in self.language_packs:
             logger.error(f"Cannot create new language pack: Source English ('{english_pack_key}') pack not found.")
             if update_context and update_context.effective_message:
-                 await update_context.effective_message.reply_text("My apologies, I'm having trouble setting up support for this language right now as my base language files are missing.")
+                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback", 
+                                                                                           "My apologies, I'm having trouble setting up support for this language right now (missing base files)."))
             return False
 
         english_pack_content_str = json.dumps(self.language_packs[english_pack_key], ensure_ascii=False, indent=2)
@@ -1571,20 +1719,22 @@ class EnkiBot:
         
         translated_content_str: Optional[str] = None
         try:
+            translator_model_id = config.OPENAI_TRANSLATION_MODEL_ID # Use specific model from config
+            logger.info(f"Using model {translator_model_id} for language pack translation to {new_lang_code}")
             translated_content_str = await self.llm_services.call_openai_llm(
-                messages_for_api, model_id=config.OPENAI_MODEL_ID, 
+                messages_for_api, model_id=translator_model_id, 
                 temperature=0.1, max_tokens=4000, **response_format_arg
             )
         except Exception as e:
             logger.error(f"LLM call itself failed during translation for {new_lang_code}: {e}", exc_info=True)
             if update_context and update_context.effective_message:
-                 await update_context.effective_message.reply_text(self._get_response_string("language_pack_creation_failed_fallback"))
+                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
             return False
 
         if not translated_content_str:
             logger.error(f"LLM failed to provide a translation string for {new_lang_code}.")
             if update_context and update_context.effective_message:
-                 await update_context.effective_message.reply_text(self._get_response_string("language_pack_creation_failed_fallback"))
+                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
             return False
         
         clean_response = translated_content_str.strip() 
@@ -1603,7 +1753,7 @@ class EnkiBot:
                 logger.error(f"Translated pack for {new_lang_code} is missing core top-level keys. Aborting save.")
                 raise ValueError("Translated JSON missing core keys.")
 
-            new_pack_path = os.path.join(config.LANGUAGE_PACKS_DIR, f"{new_lang_code}.json")
+            new_pack_path = os.path.join(self.lang_packs_dir, f"{new_lang_code}.json")
             with open(new_pack_path, 'w', encoding='utf-8') as f: 
                 json.dump(translated_pack_content, f, ensure_ascii=False, indent=2)
             logger.info(f"Successfully created and saved new language pack: {new_lang_code}.json")
@@ -1625,232 +1775,134 @@ class EnkiBot:
             if len(full_resp_to_log) < log_limit: logger.debug(f"Full problematic translated content for {new_lang_code}:\n{full_resp_to_log}")
             else: logger.debug(f"Problematic translated content (first {log_limit} chars) for {new_lang_code}:\n{full_resp_to_log[:log_limit]}")
             if update_context and update_context.effective_message:
-                await update_context.effective_message.reply_text(self._get_response_string("language_pack_creation_failed_fallback"))
+                await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
             return False
         except Exception as e:
             logger.error(f"Error processing/saving new lang pack for {new_lang_code}: {e}", exc_info=True)
             if update_context and update_context.effective_message: 
-                await update_context.effective_message.reply_text(self._get_response_string("language_pack_creation_failed_fallback"))
+                await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
             return False
 
-    async def _detect_language_and_set_prompts(self, 
-                                               current_message_text: Optional[str], 
-                                               chat_id: Optional[int], # Added chat_id
-                                               update_context: Optional[Update] = None) -> str:
-        
-        CONFIDENCE_THRESHOLD = 0.60  # Minimum probability for a detected language
-        NUM_RECENT_MESSAGES_FOR_DETECTION = 3 
-        MIN_AGGREGATED_TEXT_LENGTH = 20 # Min length of combined text to run detect_langs
+    async def determine_language_context(self, 
+                                         current_message_text: Optional[str], 
+                                         chat_id: Optional[int], 
+                                         update_context: Optional[Update] = None) -> str:
+        """
+        Determines language using LLM based on current message and chat history, sets context,
+        and attempts to create new language packs if needed.
+        """
+        LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD = 0.70  # Min confidence from LLM for its primary_lang
+        NUM_RECENT_MESSAGES_FOR_CONTEXT = 2 
+        MIN_MESSAGE_LENGTH_FOR_LLM_INPUT = 5 # Min length of current message to even bother with LLM if no history
+        MIN_AGGREGATED_TEXT_LENGTH_FOR_LLM = 20 # Min length of combined text to attempt LLM detection
 
-        # Start with the current session's language or the primary default.
-        candidate_lang_code = self.current_lang if self.current_lang != "none" else config.DEFAULT_LANGUAGE
+        final_candidate_lang_code = self.current_lang if self.current_lang != "none" else self.default_language
         
-        texts_for_detection: List[str] = []
+        # Prepare text for LLM-based language detection
+        texts_for_llm_input: List[str] = []
         if current_message_text and current_message_text.strip():
-            texts_for_detection.append(current_message_text.strip())
+            texts_for_llm_input.append(current_message_text.strip())
 
-        # Fetch recent messages if current message is short or for general robustness
-        if chat_id and (not texts_for_detection or len(texts_for_detection[0]) < 50): 
-            logger.debug(f"Fetching last {NUM_RECENT_MESSAGES_FOR_DETECTION} messages from chat {chat_id} for lang detection.")
+        history_context_str = ""
+        if chat_id and (not current_message_text or len(current_message_text.strip()) < MIN_MESSAGE_LENGTH_FOR_LLM_INPUT):
+            logger.debug(f"Current msg short or absent, fetching {NUM_RECENT_MESSAGES_FOR_CONTEXT} recent msgs from chat {chat_id} for LLM lang detection.")
             try:
-                if self.db_manager: # Ensure db_manager is initialized
-                    recent_messages = await self.db_manager.get_recent_chat_texts(chat_id, limit=NUM_RECENT_MESSAGES_FOR_DETECTION)
+                if self.db_manager:
+                    recent_messages = await self.db_manager.get_recent_chat_texts(chat_id, limit=NUM_RECENT_MESSAGES_FOR_CONTEXT)
                     if recent_messages:
-                        texts_for_detection.extend(recent_messages) 
-                        logger.debug(f"Fetched {len(recent_messages)} recent messages. Total texts for detection: {len(texts_for_detection)}")
-                else:
-                    logger.warning("db_manager not available in _detect_language_and_set_prompts.")
-            except Exception as e:
-                logger.error(f"Error fetching recent chat texts for language detection: {e}", exc_info=True)
-        
-        aggregated_text = " . ".join(reversed(texts_for_detection)).strip() # Most recent last
-        
-        detected_languages_with_probs: List[Any] = [] 
-        attempted_new_detection_on_aggregated = False
-
-        if aggregated_text and len(aggregated_text) >= MIN_AGGREGATED_TEXT_LENGTH:
-            attempted_new_detection_on_aggregated = True
-            try:
-                # DetectorFactory.seed = 0 # Re-seeding here might be too frequent. Seed once at module level.
-                detected_languages_with_probs = detect_langs(aggregated_text)
-                logger.info(f"LangDetect results on aggregated text (len {len(aggregated_text)}): {detected_languages_with_probs}")
-            except LangDetectException:
-                logger.warning(f"LangDetectException on aggregated text. Current candidate: '{candidate_lang_code}'.")
+                        # Prepend history so latest_message is indeed the latest in the combined string
+                        history_context_str = "\n".join(recent_messages) 
+                        logger.debug(f"Fetched {len(recent_messages)} messages for lang detection context.")
+                else: 
+                    logger.warning("db_manager not available in determine_language_context for history fetch.")
             except Exception as e: 
-                logger.error(f"Unexpected error during langdetect.detect_langs: {e}. Current candidate: '{candidate_lang_code}'.")
-        else:
-            logger.info(f"Aggregated text too short or empty ('{aggregated_text[:50]}...'). Using current candidate: '{candidate_lang_code}'.")
+                logger.error(f"Error fetching recent chat texts for lang detection: {e}", exc_info=True)
 
-        # Process detected languages to choose a candidate
-        chosen_lang_from_detection = None
-        if detected_languages_with_probs:
-            for lang_obj in sorted(detected_languages_with_probs, key=lambda x: x.prob, reverse=True): # Ensure sorted by prob
-                lang_code_detected = lang_obj.lang
-                lang_prob = lang_obj.prob
-                logger.debug(f"Checking detected lang: {lang_code_detected} with prob: {lang_prob:.3f}")
+        # Construct the text payload for the LLM
+        latest_message_payload = current_message_text or ""
+        aggregated_for_llm_prompt = latest_message_payload
+        if history_context_str:
+            aggregated_for_llm_prompt = f"{history_context_str}\n{latest_message_payload}".strip() # History first, then latest
 
-                if lang_prob >= CONFIDENCE_THRESHOLD:
-                    if lang_code_detected in self.language_packs:
-                        logger.info(f"Prioritizing existing pack for detected language '{lang_code_detected}' (prob: {lang_prob:.3f}).")
-                        chosen_lang_from_detection = lang_code_detected
-                        break # Found a good existing pack
-                    elif chosen_lang_from_detection is None: # No existing pack found yet for high confidence, take the first one
-                        chosen_lang_from_detection = lang_code_detected
-                        logger.info(f"High-confidence lang '{lang_code_detected}' (prob {lang_prob:.3f}) is first candidate for creation.")
-                else:
-                    logger.debug(f"Detected language '{lang_code_detected}' prob {lang_prob:.3f} below threshold {CONFIDENCE_THRESHOLD}. Stopping checks.")
-                    break # Since list is sorted, subsequent probs will also be too low
+        llm_detected_primary_lang: Optional[str] = None
+        llm_detected_confidence: float = 0.0
         
-        if chosen_lang_from_detection:
-            candidate_lang_code = chosen_lang_from_detection
-            logger.info(f"Candidate language after detection logic: '{candidate_lang_code}'")
-        else:
-            logger.info(f"No suitable language found from detection (or detection not run). Sticking with previous candidate: '{candidate_lang_code}'")
+        lang_detector_prompts = self.get_llm_prompt_set("language_detector_llm")
 
+        if lang_detector_prompts and aggregated_text_for_llm_prompt and len(aggregated_text_for_llm_prompt) >= MIN_AGGREGATED_TEXT_LENGTH_FOR_LLM :
+            user_prompt_template_key = "user_template_full_context" if history_context_str else "user_template_latest_only"
+            user_prompt_template = lang_detector_prompts.get(user_prompt_template_key)
 
-        # Attempt to set/create pack for the final candidate_lang_code
-        if candidate_lang_code not in self.language_packs:
-            # Only attempt creation if we had a basis for choosing this language (e.g., from detection)
-            # or if the initial candidate_lang_code (current/default) was itself the one missing.
-            if attempted_new_detection_on_aggregated or candidate_lang_code != (self.current_lang if self.current_lang != "none" else config.DEFAULT_LANGUAGE):
-                logger.warning(f"Language '{candidate_lang_code}' pack not found. Attempting to create one.")
-                if await self._create_and_load_language_pack(candidate_lang_code, update_context=update_context):
-                    self._set_current_language_internals(candidate_lang_code)
-                else:
-                    logger.warning(f"Failed to create pack for '{candidate_lang_code}'. Applying prioritized fallbacks.")
-                    self._set_current_language_internals(config.DEFAULT_LANGUAGE) # Triggers en -> ru -> first available
+            if user_prompt_template:
+                user_prompt_for_llm_detector = user_prompt_template.format(
+                    latest_message=latest_message_payload, 
+                    history_context=history_context_str
+                )
+                messages_for_llm_detector = [
+                    {"role": "system", "content": lang_detector_prompts["system"]},
+                    {"role": "user", "content": user_prompt_for_llm_detector}
+                ]
+                try:
+                    detection_model_id = getattr(config, 'OPENAI_CLASSIFICATION_MODEL_ID', config.OPENAI_MODEL_ID)
+                    logger.info(f"Requesting LLM language detection (model: {detection_model_id}) "
+                                f"for text: '{aggregated_text_for_llm_prompt[:70]}...'")
+                    
+                    completion_str = await self.llm_services.call_openai_llm(
+                        messages_for_llm_detector, model_id=detection_model_id,
+                        temperature=0.0, max_tokens=150, response_format={"type": "json_object"}
+                    )
+                    if completion_str:
+                        detection_result = json.loads(completion_str)
+                        logger.info(f"LLM language detection response: {detection_result}")
+                        llm_detected_primary_lang = detection_result.get("primary_lang", "").lower()
+                        llm_detected_confidence = float(detection_result.get("confidence", 0.0))
+                    else:
+                        logger.warning("LLM language detector returned no content.")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to decode JSON from LLM lang detector: {e}. Raw: {completion_str if 'completion_str' in locals() else 'N/A'}")
+                except Exception as e:
+                    logger.error(f"Error calling LLM for language detection: {e}", exc_info=True)
             else:
-                # No new detection, current/default pack missing
-                logger.info(f"Pack for current/default candidate '{candidate_lang_code}' is missing. Applying fallbacks directly.")
-                self._set_current_language_internals(config.DEFAULT_LANGUAGE) # Start fallback chain
-        else: # Pack for candidate_lang_code already exists
-            self._set_current_language_internals(candidate_lang_code)
+                logger.error(f"User prompt template '{user_prompt_template_key}' missing for LLM language detector.")
+        else:
+            logger.info("Not enough text or LLM lang detector prompts missing. Skipping LLM detection, will use current/default.")
+
+        # Logic to use LLM detection result
+        if llm_detected_primary_lang and llm_detected_confidence >= LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD:
+            logger.info(f"LLM confidently detected primary lang '{llm_detected_primary_lang}' (conf: {llm_detected_confidence:.2f}).")
+            final_candidate_lang_code = llm_detected_primary_lang
+            # No need to iterate other_detected_langs if primary is confident and for latest message.
+        else:
+            if llm_detected_primary_lang: # Log even if low confidence
+                 logger.warning(f"LLM detected primary lang '{llm_detected_primary_lang}' but confidence ({llm_detected_confidence:.2f}) "
+                               f"is below threshold ({LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD}). Using fallback logic with: {final_candidate_lang_code}")
+            else: # LLM detection failed entirely or no text
+                logger.info(f"LLM language detection not used or failed. Using current/default candidate: {final_candidate_lang_code}")
         
-        return self.current_lang
-
-    async def log_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        # logger.info("EnkiBot.log_message CALLED")
-        if not update.message or not update.message.text or not update.effective_user: 
-            logger.debug("log_message: Skipping due to missing message, text, or user.")
-            return
-        
-        chat_id = update.effective_chat.id
-        user = update.effective_user
-        message = update.message
-
-        if config.ALLOWED_GROUP_IDS and chat_id not in config.ALLOWED_GROUP_IDS:
-            logger.debug(f"log_message: Skipping message from chat {chat_id}, not in allowed group IDs.")
-            return
-
-        action_taken = await self.db_manager.log_chat_message_and_upsert_user(
-            chat_id=chat_id, user_id=user.id, username=user.username,
-            first_name=user.first_name, last_name=user.last_name,
-            message_id=message.message_id, message_text=message.text,
-            preferred_language=self.current_lang 
-        )
-        logger.info(f"Message from user {user.id} logged. Profile action: {action_taken}.")
-
-        name_var_prompts = self._get_llm_prompt_set("name_variation_generator")
-        if action_taken and action_taken.lower() == "insert" and name_var_prompts:
-            logger.info(f"New user {user.id} ({user.first_name}). Queuing name variation generation.")
-            asyncio.create_task(self.profile_manager.populate_name_variations_with_llm(
-                user_id=user.id, first_name=user.first_name, last_name=user.last_name, username=user.username,
-                system_prompt=name_var_prompts["system"], 
-                user_prompt_template=name_var_prompts.get("user","Generate for: {name_info}")
-            ))
-
-        profile_create_prompts = self._get_llm_prompt_set("profile_creator")
-        profile_update_prompts = self._get_llm_prompt_set("profile_updater")
-        if message.text and len(message.text.strip()) > 10:
-            if profile_create_prompts and profile_update_prompts:
-                logger.info(f"Message from user {user.id} meets criteria for profile analysis. Queuing task.")
-                asyncio.create_task(self.profile_manager.analyze_and_update_user_profile(
-                    user_id=user.id, message_text=message.text,
-                    create_system_prompt=profile_create_prompts["system"],
-                    create_user_prompt_template=profile_create_prompts.get("user","Analyze: {message_text}"),
-                    update_system_prompt=profile_update_prompts["system"],
-                    update_user_prompt_template=profile_update_prompts.get("user","Update based on: {message_text} with existing: {current_profile_notes}")
-                ))
+        # Attempt to set/create pack for the final_candidate_lang_code
+        if final_candidate_lang_code not in self.language_packs:
+            logger.warning(f"Language pack for candidate '{final_candidate_lang_code}' not found. Attempting creation.")
+            if await self._create_and_load_language_pack(final_candidate_lang_code, update_context=update_context):
+                self._set_current_language_internals(final_candidate_lang_code)
             else: 
-                logger.warning(f"Profile prompts missing for lang '{self.current_lang}'. Skipping profile analysis for user {user.id}.")
-
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
-        # logger.info(f"DIAGNOSTIC (handle_message START): Current lang before detection: {self.current_lang} for chat {update.effective_chat.id if update.effective_chat else 'N/A'}")
-        if not update.message or not update.message.text or not update.effective_chat or not update.effective_user: return None 
-        
-        # 1. Detect language & set context
-        await self._detect_language_and_set_prompts(
-            update.message.text, 
-            chat_id=update.effective_chat.id,
-            update_context=update
-        )
-        # logger.info(f"DIAGNOSTIC (handle_message after detect): Lang set to: {self.current_lang} for user {update.effective_user.id}")
-        
-        # 2. Log message
-        if hasattr(self, 'log_message') and callable(getattr(self, 'log_message')): 
-            await self.log_message(update, context)
+                logger.warning(f"Failed to create pack for '{final_candidate_lang_code}'. Applying prioritized fallbacks.")
+                self._set_current_language_internals(self.default_language) 
         else: 
-            logger.critical("CRITICAL: log_message method not found! Logging skipped.")
-            if update.message: 
-                 await update.message.reply_text("An internal error occurred (L). Please try again later.")
-            return None
-
-        # 3. Handle pending actions
-        pending_action = self.pending_action_data.pop(update.effective_chat.id, None)
-        if pending_action and pending_action["action_type"] == "ask_city_weather":
-            city_name = update.message.text
-            logger.info(f"Received city '{city_name}' for pending weather request.")
-            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-            weather_report = await self.api_router.get_weather_data( 
-                location=city_name, forecast_type=pending_action["forecast_type"], 
-                days=pending_action["days"], lang_pack_full=self.current_lang_pack_full )
-            await update.message.reply_text(weather_report, reply_to_message_id=pending_action["original_message_id"])
-            return ConversationHandler.END 
-
-        user_msg_txt = update.message.text
-        user_msg_txt_lower = user_msg_txt.lower()
-
-        # 4. Check trigger
-        if not await self._is_triggered(update, context, user_msg_txt_lower): return None
-
-        # 5. Master Intent Classification
-        master_intent_prompts = self._get_llm_prompt_set("master_intent_classifier")
-        master_intent = "UNKNOWN_INTENT"
-        if master_intent_prompts and "system" in master_intent_prompts:
-            user_template_for_master = master_intent_prompts.get("user","{text_to_classify}")
-            master_intent = await self.intent_recognizer.classify_master_intent(
-                text=user_msg_txt, lang_code=self.current_lang,
-                system_prompt=master_intent_prompts["system"], user_prompt_template=user_template_for_master )
-        else: logger.error(f"Master intent classification prompt set missing/malformed for lang '{self.current_lang}'.")
-        
-        logger.info(f"Master Intent for '{user_msg_txt[:50]}...' classified as: {master_intent}")
-
-        # 6. Route based on Master Intent
-        if master_intent == "WEATHER_QUERY":
-            state = await self._handle_weather_intent(update, context, user_msg_txt)
-            return state 
-        elif master_intent == "NEWS_QUERY": await self._handle_news_intent(update, context, user_msg_txt)
-        elif master_intent == "MESSAGE_ANALYSIS_QUERY": await self._handle_message_analysis_query(update, context, user_msg_txt)
-        elif master_intent in ["USER_PROFILE_QUERY", "GENERAL_CHAT", "UNKNOWN_INTENT"]:
-            await self._handle_user_profile_query_or_general_chat(update, context, user_msg_txt, master_intent)
-        else: 
-            logger.warning(f"Unhandled master intent type: {master_intent}. Falling back to general.")
-            await self._handle_user_profile_query_or_general_chat(update, context, user_msg_txt, "UNKNOWN_INTENT")
-        return None
+            self._set_current_language_internals(final_candidate_lang_code)
+            
+        return self.current_lang
     
-    def _get_llm_prompt_set(self, key: str) -> Optional[Dict[str, str]]:
+    def get_llm_prompt_set(self, key: str) -> Optional[Dict[str, str]]:
         current_prompts_to_check = self.current_llm_prompt_sets
         prompt_set = current_prompts_to_check.get(key)
-        primary_fallback_lang = config.DEFAULT_LANGUAGE
-        secondary_fallback_lang = "ru"
-
+        
         if not prompt_set: 
-            logger.debug(f"LLM prompt set key '{key}' not in current lang '{self.current_lang}'. Trying '{primary_fallback_lang}'.")
-            current_prompts_to_check = self.llm_prompt_sets.get(primary_fallback_lang, {})
+            logger.debug(f"LLM prompt set key '{key}' not in current lang '{self.current_lang}'. Trying '{self.primary_fallback_lang}'.")
+            current_prompts_to_check = self.llm_prompt_sets.get(self.primary_fallback_lang, {})
             prompt_set = current_prompts_to_check.get(key)
-            if not prompt_set and primary_fallback_lang != secondary_fallback_lang: 
-                 logger.debug(f"LLM prompt set key '{key}' not in '{primary_fallback_lang}'. Trying '{secondary_fallback_lang}'.")
-                 current_prompts_to_check = self.llm_prompt_sets.get(secondary_fallback_lang, {})
+            if not prompt_set and self.primary_fallback_lang != self.secondary_fallback_lang: 
+                 logger.debug(f"LLM prompt set key '{key}' not in '{self.primary_fallback_lang}'. Trying '{self.secondary_fallback_lang}'.")
+                 current_prompts_to_check = self.llm_prompt_sets.get(self.secondary_fallback_lang, {})
                  prompt_set = current_prompts_to_check.get(key)
         
         if not prompt_set:
@@ -1861,18 +1913,16 @@ class EnkiBot:
             return None
         return prompt_set
 
-    def _get_response_string(self, key: str, default_value: Optional[str] = None, **kwargs) -> str:
+    def get_response_string(self, key: str, default_value: Optional[str] = None, **kwargs) -> str:
         raw_string = self.current_response_strings.get(key)
         lang_tried = self.current_lang
-        primary_fallback_lang = config.DEFAULT_LANGUAGE
-        secondary_fallback_lang = "ru"
 
         if raw_string is None: 
-            lang_tried = primary_fallback_lang
-            raw_string = self.response_strings.get(primary_fallback_lang, {}).get(key)
-            if raw_string is None and primary_fallback_lang != secondary_fallback_lang: 
-                lang_tried = secondary_fallback_lang
-                raw_string = self.response_strings.get(secondary_fallback_lang, {}).get(key)
+            lang_tried = self.primary_fallback_lang
+            raw_string = self.response_strings.get(self.primary_fallback_lang, {}).get(key)
+            if raw_string is None and self.primary_fallback_lang != self.secondary_fallback_lang: 
+                lang_tried = self.secondary_fallback_lang
+                raw_string = self.response_strings.get(self.secondary_fallback_lang, {}).get(key)
 
         if raw_string is None: 
             if default_value is not None: raw_string = default_value
@@ -1886,152 +1936,26 @@ class EnkiBot:
             try: return english_raw.format(**kwargs) if kwargs else english_raw
             except KeyError: return f"[[Formatting error for response key: {key} - check placeholders]]"
 
-    async def _is_triggered(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt_lower: str) -> bool:
-        # ... (implementation with enhanced logging for group ID check from message #26) ...
-        if not update.message or not context.bot:
-            # logger.debug("_is_triggered: False (no message or bot context)") # Can be too verbose
-            return False
-        
-        current_chat_id = update.effective_chat.id
-        is_group = update.message.chat.type in ['group', 'supergroup']
-
-        if not is_group:
-            # logger.debug(f"_is_triggered: True (private chat with user {update.effective_user.id if update.effective_user else 'Unknown'})")
-            return True
-
-        # --- Group Chat Logic ---
-        # logger.info(f"DIAGNOSTIC (_is_triggered): Group Chat ID: {current_chat_id}, Allowed Set: {config.ALLOWED_GROUP_IDS}")
-        if config.ALLOWED_GROUP_IDS: 
-            if current_chat_id not in config.ALLOWED_GROUP_IDS:
-                # logger.info(f"_is_triggered: False (group {current_chat_id} not in ALLOWED_GROUP_IDS: {config.ALLOWED_GROUP_IDS})")
-                return False
-        
-        bot_username_lower = getattr(context.bot, 'username', "").lower() if getattr(context.bot, 'username', None) else ""
-        is_at_mentioned = bool(bot_username_lower and f"@{bot_username_lower}" in user_msg_txt_lower)
-        is_nickname_mentioned = False
-        for nick in config.BOT_NICKNAMES_TO_CHECK:
-            if re.search(r'\b' + re.escape(nick.lower()) + r'\b', user_msg_txt_lower, re.I):
-                is_nickname_mentioned = True; break
-        
-        is_bot_mentioned = is_at_mentioned or is_nickname_mentioned
-        is_reply_to_bot = (update.message.reply_to_message and 
-                           update.message.reply_to_message.from_user and
-                           update.message.reply_to_message.from_user.id == context.bot.id)
-        
-        final_trigger_decision = is_bot_mentioned or is_reply_to_bot
-        # logger.info(f"_is_triggered (Group: {current_chat_id}): Text='{user_msg_txt_lower[:30]}...' @Mention={is_at_mentioned}, NickMention={is_nickname_mentioned}, ReplyToBot={is_reply_to_bot} => Trigger={final_trigger_decision}")
-        return final_trigger_decision
-
-    async def _handle_message_analysis_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt: str) -> bool:
-        # ... (implementation as in message #26, ensuring prompt fetching is robust) ...
-        if not (update.message and update.message.reply_to_message and 
-                update.message.reply_to_message.text and 
-                update.message.reply_to_message.from_user and
-                context.bot and update.message.reply_to_message.from_user.id != context.bot.id):
-            return False
-        logger.info("Processing MESSAGE_ANALYSIS_QUERY.")
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        original_text = update.message.reply_to_message.text
-        question_for_analysis = user_msg_txt
-        bot_username_lower = getattr(context.bot, 'username', "").lower() if getattr(context.bot, 'username', None) else ""
-        cleaned_question = user_msg_txt.lower()
-        for nick in config.BOT_NICKNAMES_TO_CHECK + ([f"@{bot_username_lower}"] if bot_username_lower else []):
-            cleaned_question = cleaned_question.replace(nick.lower(), "").strip()
-        if len(cleaned_question) < 5: question_for_analysis = self._get_response_string("replied_message_default_question")
-        analyzer_prompts = self._get_llm_prompt_set("replied_message_analyzer")
-        if not analyzer_prompts : logger.error("Prompt set for replied message analysis is missing."); await update.message.reply_text(self._get_response_string("generic_error_message")); return True
-        analysis_result = await self.response_generator.analyze_replied_message(
-            original_text=original_text, user_question=question_for_analysis,
-            system_prompt=analyzer_prompts["system"], user_prompt_template=analyzer_prompts.get("user") )
-        await update.message.reply_text(analysis_result); return True
-
-    async def _handle_weather_intent(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt: str) -> Optional[int]:
-        # ... (implementation as in message #26, ensure prompt fetching is robust) ...
-        logger.info(f"Handling WEATHER_QUERY: '{user_msg_txt}'")
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        weather_analysis_prompts = self._get_llm_prompt_set("weather_intent_analyzer")
-        location_extract_prompts = self._get_llm_prompt_set("location_extractor")
-        if not (weather_analysis_prompts and location_extract_prompts):
-            logger.error("Weather intent prompts are missing or malformed."); await update.message.reply_text(self._get_response_string("generic_error_message")); return None 
-        intent_data = await self.intent_recognizer.analyze_weather_request_with_llm(
-            text=user_msg_txt, lang_code=self.current_lang, system_prompt=weather_analysis_prompts["system"], user_prompt_template=weather_analysis_prompts.get("user") )
-        city = await self.intent_recognizer.extract_location_with_llm(
-            text=user_msg_txt, lang_code=self.current_lang, system_prompt=location_extract_prompts["system"], user_prompt_template=location_extract_prompts.get("user") )
-        if city:
-            weather_report = await self.api_router.get_weather_data(location=city, forecast_type=intent_data.get("type", "current"), days=intent_data.get("days", 7), lang_pack_full=self.current_lang_pack_full )
-            await update.message.reply_text(weather_report); return None 
-        else:
-            self.pending_action_data[update.effective_chat.id] = { "action_type": "ask_city_weather", "forecast_type": intent_data.get("type", "current"), "days": intent_data.get("days", 7), "original_message_id": update.message.message_id }
-            await update.message.reply_text(self._get_response_string("weather_ask_city")); return ASK_CITY
-
-    async def _handle_news_intent(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt: str) -> None:
-        # ... (implementation as in message #26, ensure prompt fetching is robust) ...
-        logger.info(f"Handling NEWS_QUERY: '{user_msg_txt}'")
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        news_topic_prompts = self._get_llm_prompt_set("news_topic_extractor")
-        if not news_topic_prompts: logger.error("News topic extraction prompt is missing or malformed."); await update.message.reply_text(self._get_response_string("generic_error_message")); return
-        topic = await self.intent_recognizer.extract_news_topic_with_llm(
-            text=user_msg_txt, lang_code=self.current_lang, system_prompt=news_topic_prompts["system"], user_prompt_template=news_topic_prompts.get("user") )
-        news_report = await self.api_router.get_latest_news( query=topic, lang_code=self.current_lang, response_strings=self.current_response_strings )
-        await update.message.reply_text(news_report, disable_web_page_preview=True)
-
-    async def _handle_user_profile_query_or_general_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt: str, master_intent: str) -> None:
-        # ... (implementation as in message #26, ensure prompt fetching is robust) ...
-        logger.info(f"Handling {master_intent}: '{user_msg_txt}'")
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        main_orchestrator_prompts = self._get_llm_prompt_set("main_orchestrator")
-        system_prompt_override = (main_orchestrator_prompts["system"] if main_orchestrator_prompts else "You are EnkiBot, a helpful AI assistant.")
-        reply = await self.response_generator.get_orchestrated_llm_response(
-            prompt_text=user_msg_txt, chat_id=update.effective_chat.id, user_id=update.effective_user.id, message_id=update.message.message_id, context=context, lang_code=self.current_lang,
-            system_prompt_override=system_prompt_override, user_search_ambiguous_response_template=self._get_response_string("user_search_ambiguous_clarification"),
-            user_search_not_found_response_template=self._get_response_string("user_search_not_found_in_db") )
-        if reply: await update.message.reply_text(reply)
-        else: await update.message.reply_text(self._get_response_string("llm_error_fallback"))
-        
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not update.effective_user or not update.message: return
-        self._set_current_language_internals(config.DEFAULT_LANGUAGE) # For commands, usually best to default
-        await update.message.reply_html(self._get_response_string("start", user_mention=update.effective_user.mention_html()))
-
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not update.message: return
-        self._set_current_language_internals(config.DEFAULT_LANGUAGE)
-        await update.message.reply_text(self._get_response_string("help"))
-
-    async def news_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not update.message or not update.effective_chat: return
-        self._set_current_language_internals(config.DEFAULT_LANGUAGE)
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        report = await self.api_router.get_latest_news(query=None, lang_code=self.current_lang, response_strings=self.current_response_strings)
-        await update.message.reply_text(report, disable_web_page_preview=True)
-
-    async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-        logger.error(f'Update "{update}" caused error "{context.error}"', exc_info=True)
-        if isinstance(update, Update) and update.effective_chat:
-            try:
-                error_responses = self.language_packs.get(config.DEFAULT_LANGUAGE, {}).get("responses", {})
-                if not error_responses and self.language_packs: error_responses = next(iter(self.language_packs.values()), {}).get("responses", {})
-                error_msg = error_responses.get("generic_error_message", "Oops! Something went very wrong on my end. I've logged the issue.")
-                await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
-            except Exception as e: logger.error(f"CRITICAL: Error sending error message to user: {e}", exc_info=True)
-    
-    def register_handlers(self, application: Application):
-        application.add_handler(CommandHandler("start", self.start_command))
-        application.add_handler(CommandHandler("help", self.help_command))
-        application.add_handler(CommandHandler("news", self.news_command))
-        conv_handler = ConversationHandler(
-            entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)],
-            states={ ASK_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)],},
-            fallbacks=[], allow_reentry=True 
-        )
-        application.add_handler(conv_handler)
-        application.add_error_handler(self.error_handler)
-        logger.info("All Telegram handlers have been registered.")
-
 
 ======================================================================
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/core/llm_services.py ---
 ======================================================================
+
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 # enkibot/core/llm_services.py
 # ==================================================================================================
@@ -2251,16 +2175,414 @@ class LLMServices:
 
 
 ======================================================================
+--- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/core/telegram_handlers.py ---
+======================================================================
+
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+# enkibot/core/telegram_handlers.py
+import logging
+import asyncio
+from typing import Optional, Dict, Any, List 
+
+from telegram import Update
+from telegram.ext import Application, ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
+from telegram.constants import ChatAction
+import re 
+
+# Import config directly for constants like BOT_NICKNAMES_TO_CHECK, ALLOWED_GROUP_IDS
+# This is acceptable if these are truly static configurations.
+# Alternatively, they are passed in __init__ as `self.allowed_group_ids` and `self.bot_nicknames`
+# The __init__ signature I provided in msg #30 and used in app.py in #28 *does* pass them.
+# So, we should use `self.allowed_group_ids` and `self.bot_nicknames`.
+
+from enkibot.core.language_service import LanguageService
+from enkibot.utils.database import DatabaseManager # For type hinting if needed for self.db_manager
+from enkibot.core.llm_services import LLMServices # For type hinting if needed
+from enkibot.modules.intent_recognizer import IntentRecognizer # For type hinting
+from enkibot.modules.profile_manager import ProfileManager # For type hinting
+from enkibot.modules.api_router import ApiRouter # For type hinting
+from enkibot.modules.response_generator import ResponseGenerator # For type hinting
+
+
+logger = logging.getLogger(__name__)
+ASK_CITY = 1 
+
+class TelegramHandlerService:
+    def __init__(self, 
+                 application: Application, 
+                 db_manager: DatabaseManager, 
+                 llm_services: LLMServices,   
+                 intent_recognizer: IntentRecognizer, 
+                 profile_manager: ProfileManager,     
+                 api_router: ApiRouter,             
+                 response_generator: ResponseGenerator, 
+                 language_service: LanguageService,
+                 allowed_group_ids: set, 
+                 bot_nicknames: list
+                ):
+        logger.info("TelegramHandlerService __init__ STARTING")
+        self.application = application
+        self.db_manager = db_manager
+        self.llm_services = llm_services 
+        self.intent_recognizer = intent_recognizer
+        self.profile_manager = profile_manager
+        self.api_router = api_router
+        self.response_generator = response_generator
+        self.language_service = language_service
+        
+        self.allowed_group_ids = allowed_group_ids 
+        self.bot_nicknames = bot_nicknames 
+        
+        self.pending_action_data: Dict[int, Dict[str, Any]] = {}
+        logger.info("TelegramHandlerService __init__ COMPLETED")
+
+    async def log_message_and_profile_tasks(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.text or not update.effective_user: 
+            logger.debug("log_message_and_profile_tasks: Skipping.")
+            return
+        
+        chat_id = update.effective_chat.id
+        user = update.effective_user
+        message = update.message
+
+        # Use self.allowed_group_ids for filtering here as well
+        if self.allowed_group_ids and chat_id not in self.allowed_group_ids:
+            logger.debug(f"log_message_and_profile_tasks: Skipping msg from chat {chat_id} (not in allowed group IDs: {self.allowed_group_ids}).")
+            return
+
+        current_lang_for_log = self.language_service.current_lang 
+
+        action_taken = await self.db_manager.log_chat_message_and_upsert_user(
+            chat_id=chat_id, user_id=user.id, username=user.username,
+            first_name=user.first_name, last_name=user.last_name,
+            message_id=message.message_id, message_text=message.text,
+            preferred_language=current_lang_for_log 
+        )
+        logger.info(f"Message from user {user.id} logged. Profile action: {action_taken}.")
+
+        name_var_prompts = self.language_service.get_llm_prompt_set("name_variation_generator")
+        if action_taken and action_taken.lower() == "insert" and name_var_prompts:
+            logger.info(f"New user {user.id} ({user.first_name}). Queuing name variation generation.")
+            asyncio.create_task(self.profile_manager.populate_name_variations_with_llm(
+                user_id=user.id, first_name=user.first_name, last_name=user.last_name, username=user.username,
+                system_prompt=name_var_prompts["system"], 
+                user_prompt_template=name_var_prompts.get("user","Generate for: {name_info}")
+            ))
+
+        profile_create_prompts = self.language_service.get_llm_prompt_set("profile_creator")
+        profile_update_prompts = self.language_service.get_llm_prompt_set("profile_updater")
+        if message.text and len(message.text.strip()) > 10:
+            if profile_create_prompts and profile_update_prompts:
+                logger.info(f"Message from user {user.id} meets criteria for profile analysis. Queuing task.")
+                asyncio.create_task(self.profile_manager.analyze_and_update_user_profile(
+                    user_id=user.id, message_text=message.text,
+                    create_system_prompt=profile_create_prompts["system"],
+                    create_user_prompt_template=profile_create_prompts.get("user","Analyze: {message_text}"),
+                    update_system_prompt=profile_update_prompts["system"],
+                    update_user_prompt_template=profile_update_prompts.get("user","Update based on: {message_text} with existing: {current_profile_notes}")
+                ))
+            else: 
+                logger.warning(f"Profile prompts missing for lang '{current_lang_for_log}'. Skipping profile analysis for user {user.id}.")
+
+    async def _is_triggered(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt_lower: str) -> bool:
+        if not update.message or not context.bot:
+            logger.debug("_is_triggered: False (no message or bot context)")
+            return False
+        
+        current_chat_id = update.effective_chat.id
+        is_group = update.message.chat.type in ['group', 'supergroup']
+
+        if not is_group:
+            logger.debug(f"_is_triggered: True (private chat with user {update.effective_user.id if update.effective_user else 'Unknown'})")
+            return True
+
+        if self.allowed_group_ids: 
+            if current_chat_id not in self.allowed_group_ids:
+                logger.info(f"_is_triggered: False (group {current_chat_id} not in self.allowed_group_ids: {self.allowed_group_ids})")
+                return False
+        
+        bot_username_lower = getattr(context.bot, 'username', "").lower() if getattr(context.bot, 'username', None) else ""
+        is_at_mentioned = bool(bot_username_lower and f"@{bot_username_lower}" in user_msg_txt_lower)
+        
+        is_nickname_mentioned = False
+        for nick in self.bot_nicknames: 
+            if re.search(r'\b' + re.escape(nick.lower()) + r'\b', user_msg_txt_lower, re.I):
+                is_nickname_mentioned = True; break
+        
+        is_bot_mentioned = is_at_mentioned or is_nickname_mentioned
+        is_reply_to_bot = (
+            update.message.reply_to_message and 
+            update.message.reply_to_message.from_user and
+            update.message.reply_to_message.from_user.id == context.bot.id
+        )
+        
+        final_trigger_decision = is_bot_mentioned or is_reply_to_bot
+        
+        if final_trigger_decision:
+            logger.info(
+                f"_is_triggered: True (Group: {current_chat_id}): "
+                f"Text='{user_msg_txt_lower[:30]}...' @Mention={is_at_mentioned}, NickMention={is_nickname_mentioned}, "
+                f"ReplyToBot={is_reply_to_bot}"
+            )
+        # else: # This log can be noisy if not triggered
+            # logger.info(
+            #      f"_is_triggered: False (Group: {current_chat_id}): No direct interaction. "
+            #      f"Text='{user_msg_txt_lower[:30]}...' @Mention={is_at_mentioned}, NickMention={is_nickname_mentioned}, ReplyToBot={is_reply_to_bot}"
+            # )
+        return final_trigger_decision
+
+    # --- THESE ARE THE MISSING METHODS (or misnamed/misplaced in your local file) ---
+    async def _handle_weather_intent(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt: str) -> Optional[int]:
+        logger.info(f"TelegramHandlers: Handling WEATHER_QUERY: '{user_msg_txt}'")
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        
+        weather_analysis_prompts = self.language_service.get_llm_prompt_set("weather_intent_analyzer")
+        location_extract_prompts = self.language_service.get_llm_prompt_set("location_extractor")
+
+        if not (weather_analysis_prompts and "system" in weather_analysis_prompts and \
+                location_extract_prompts and "system" in location_extract_prompts):
+            logger.error("Weather intent prompts are missing or malformed.")
+            await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
+            return None 
+        
+        intent_data = await self.intent_recognizer.analyze_weather_request_with_llm(
+            text=user_msg_txt, lang_code=self.language_service.current_lang, 
+            system_prompt=weather_analysis_prompts["system"], user_prompt_template=weather_analysis_prompts.get("user") )
+        city = await self.intent_recognizer.extract_location_with_llm(
+            text=user_msg_txt, lang_code=self.language_service.current_lang,
+            system_prompt=location_extract_prompts["system"], user_prompt_template=location_extract_prompts.get("user") )
+        
+        if city:
+            weather_report = await self.api_router.get_weather_data(
+                location=city, forecast_type=intent_data.get("type", "current"), 
+                days=intent_data.get("days", 7), lang_pack_full=self.language_service.current_lang_pack_full )
+            await update.message.reply_text(weather_report); return None 
+        else:
+            self.pending_action_data[update.effective_chat.id] = { 
+                "action_type": "ask_city_weather", "forecast_type": intent_data.get("type", "current"), 
+                "days": intent_data.get("days", 7), "original_message_id": update.message.message_id }
+            await update.message.reply_text(self.language_service.get_response_string("weather_ask_city")); return ASK_CITY
+
+    async def _handle_news_intent(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt: str) -> None:
+        logger.info(f"TelegramHandlers: Handling NEWS_QUERY: '{user_msg_txt}'")
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        news_topic_prompts = self.language_service.get_llm_prompt_set("news_topic_extractor")
+        if not (news_topic_prompts and "system" in news_topic_prompts): 
+            logger.error("News topic extraction prompt is missing or malformed."); 
+            await update.message.reply_text(self.language_service.get_response_string("generic_error_message")); return
+        
+        topic = await self.intent_recognizer.extract_news_topic_with_llm(
+            text=user_msg_txt, lang_code=self.language_service.current_lang, 
+            system_prompt=news_topic_prompts["system"], user_prompt_template=news_topic_prompts.get("user") )
+        news_report = await self.api_router.get_latest_news( 
+            query=topic, lang_code=self.language_service.current_lang, 
+            response_strings=self.language_service.current_response_strings )
+        await update.message.reply_text(news_report, disable_web_page_preview=True)
+
+    async def _handle_message_analysis_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt: str) -> bool:
+        if not (update.message and update.message.reply_to_message and 
+                update.message.reply_to_message.text and 
+                update.message.reply_to_message.from_user and
+                context.bot and update.message.reply_to_message.from_user.id != context.bot.id):
+            logger.debug("_handle_message_analysis_query: Conditions not met for reply analysis.")
+            return False # Not a valid scenario for this handler to take over
+        
+        logger.info("TelegramHandlers: Processing MESSAGE_ANALYSIS_QUERY.")
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        original_text = update.message.reply_to_message.text
+        question_for_analysis = user_msg_txt
+        
+        bot_username_lower = getattr(context.bot, 'username', "").lower() if getattr(context.bot, 'username', None) else ""
+        cleaned_question = user_msg_txt.lower()
+        for nick in self.bot_nicknames + ([f"@{bot_username_lower}"] if bot_username_lower else []):
+            cleaned_question = cleaned_question.replace(nick.lower(), "").strip()
+        if len(cleaned_question) < 5: 
+            question_for_analysis = self.language_service.get_response_string("replied_message_default_question")
+        
+        analyzer_prompts = self.language_service.get_llm_prompt_set("replied_message_analyzer")
+        if not (analyzer_prompts and "system" in analyzer_prompts): 
+            logger.error("Prompt set for replied message analysis is missing or malformed."); 
+            await update.message.reply_text(self.language_service.get_response_string("generic_error_message")); 
+            return True # Error handled by message
+        
+        analysis_result = await self.response_generator.analyze_replied_message(
+            original_text=original_text, user_question=question_for_analysis,
+            system_prompt=analyzer_prompts["system"], user_prompt_template=analyzer_prompts.get("user") )
+        await update.message.reply_text(analysis_result)
+        return True # Handled
+
+    async def _handle_user_profile_query_or_general_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt: str, master_intent: str) -> None:
+        logger.info(f"TelegramHandlers: Handling {master_intent}: '{user_msg_txt[:50]}...'")
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        
+        main_orchestrator_prompts = self.language_service.get_llm_prompt_set("main_orchestrator")
+        system_prompt_override = (main_orchestrator_prompts["system"] 
+                                  if main_orchestrator_prompts and "system" in main_orchestrator_prompts
+                                  else "You are EnkiBot, a helpful AI assistant.")
+        
+        reply = await self.response_generator.get_orchestrated_llm_response(
+            prompt_text=user_msg_txt, chat_id=update.effective_chat.id, user_id=update.effective_user.id, 
+            message_id=update.message.message_id, context=context, lang_code=self.language_service.current_lang,
+            system_prompt_override=system_prompt_override, 
+            user_search_ambiguous_response_template=self.language_service.get_response_string("user_search_ambiguous_clarification"),
+            user_search_not_found_response_template=self.language_service.get_response_string("user_search_not_found_in_db") )
+        
+        if reply: await update.message.reply_text(reply)
+        else: await update.message.reply_text(self.language_service.get_response_string("llm_error_fallback"))
+    # --- END OF MISSING METHODS ---
+
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
+        if not update.message or not update.message.text or not update.effective_chat or not update.effective_user: 
+            return None 
+        
+        await self.language_service.determine_language_context(
+            update.message.text, 
+            chat_id=update.effective_chat.id,
+            update_context=update
+        )
+        logger.info(f"TelegramHandlers: Lang set to: {self.language_service.current_lang} for user {update.effective_user.id}")
+        
+        await self.log_message_and_profile_tasks(update, context)
+        
+        pending_action = self.pending_action_data.pop(update.effective_chat.id, None)
+        if pending_action and pending_action["action_type"] == "ask_city_weather":
+            city_name = update.message.text
+            logger.info(f"Received city '{city_name}' for pending weather request.")
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+            weather_report = await self.api_router.get_weather_data( 
+                location=city_name, forecast_type=pending_action["forecast_type"], 
+                days=pending_action["days"], lang_pack_full=self.language_service.current_lang_pack_full )
+            await update.message.reply_text(weather_report, reply_to_message_id=pending_action["original_message_id"])
+            return ConversationHandler.END 
+
+        user_msg_txt = update.message.text
+        user_msg_txt_lower = user_msg_txt.lower()
+
+        if not await self._is_triggered(update, context, user_msg_txt_lower): 
+            return None
+
+        master_intent_prompts = self.language_service.get_llm_prompt_set("master_intent_classifier")
+        master_intent = "UNKNOWN_INTENT"
+        if master_intent_prompts and "system" in master_intent_prompts:
+            user_template_for_master = master_intent_prompts.get("user","{text_to_classify}")
+            master_intent = await self.intent_recognizer.classify_master_intent(
+                text=user_msg_txt, lang_code=self.language_service.current_lang,
+                system_prompt=master_intent_prompts["system"], user_prompt_template=user_template_for_master )
+        else: 
+            logger.error(f"Master intent classification prompt set missing/malformed for lang '{self.language_service.current_lang}'.")
+        
+        logger.info(f"Master Intent for '{user_msg_txt[:50]}...' classified as: {master_intent}")
+
+        if master_intent == "WEATHER_QUERY":
+            state = await self._handle_weather_intent(update, context, user_msg_txt) # This line was erroring
+            return state 
+        elif master_intent == "NEWS_QUERY": 
+            await self._handle_news_intent(update, context, user_msg_txt)
+        elif master_intent == "MESSAGE_ANALYSIS_QUERY": 
+            if not (update.message.reply_to_message and \
+                    update.message.reply_to_message.text and \
+                    update.message.reply_to_message.from_user and \
+                    context.bot and \
+                    update.message.reply_to_message.from_user.id != context.bot.id):
+                logger.info("MESSAGE_ANALYSIS_QUERY classified, but not a valid reply-to-another. Treating as GENERAL_CHAT.")
+                await self._handle_user_profile_query_or_general_chat(update, context, user_msg_txt, "GENERAL_CHAT")
+            else:
+                await self._handle_message_analysis_query(update, context, user_msg_txt)
+        elif master_intent in ["USER_PROFILE_QUERY", "GENERAL_CHAT", "UNKNOWN_INTENT"]:
+            await self._handle_user_profile_query_or_general_chat(update, context, user_msg_txt, master_intent)
+        else: 
+            logger.warning(f"Unhandled master intent type: {master_intent}. Falling back to general.")
+            await self._handle_user_profile_query_or_general_chat(update, context, user_msg_txt, "UNKNOWN_INTENT")
+        return None
+        
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.effective_user or not update.message: return
+        self.language_service._set_current_language_internals(config.DEFAULT_LANGUAGE) 
+        await update.message.reply_html(self.language_service.get_response_string("start", user_mention=update.effective_user.mention_html()))
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message: return
+        self.language_service._set_current_language_internals(config.DEFAULT_LANGUAGE)
+        await update.message.reply_text(self.language_service.get_response_string("help"))
+
+    async def news_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.effective_chat: return
+        self.language_service._set_current_language_internals(config.DEFAULT_LANGUAGE)
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        report = await self.api_router.get_latest_news(
+            query=None, lang_code=self.language_service.current_lang, 
+            response_strings=self.language_service.current_response_strings )
+        await update.message.reply_text(report, disable_web_page_preview=True)
+
+    async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        logger.error(f'Update "{update}" caused error "{context.error}"', exc_info=True)
+        if isinstance(update, Update) and update.effective_chat:
+            try:
+                error_msg = self.language_service.get_response_string(
+                    "generic_error_message", 
+                    "Oops! Something went very wrong on my end. I've logged the issue."
+                )
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+            except Exception as e: 
+                logger.error(f"CRITICAL: Error sending error message to user: {e}", exc_info=True)
+    
+    def register_all_handlers(self): 
+        self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler("news", self.news_command))
+        
+        conv_handler = ConversationHandler(
+            entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)],
+            states={ ASK_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)],},
+            fallbacks=[], 
+            allow_reentry=True 
+        )
+        self.application.add_handler(conv_handler)
+        self.application.add_error_handler(self.error_handler)
+        logger.info("TelegramHandlerService: All handlers registered.")
+
+
+======================================================================
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/evolution/__init__.py ---
 ======================================================================
 
-*** ERROR: Could not read file. Reason: 'utf-8' codec can't decode byte 0xf6 in position 149: invalid start byte ***
+*** ERROR: Could not read file. Reason: 'utf-8' codec can't decode byte 0xf6 in position 914: invalid start byte ***
 
 
 ======================================================================
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/evolution/module_tester.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # ==================================================================================================
 # === EnkiBot Module Tester (Placeholder) ===
 # ==================================================================================================
@@ -2307,6 +2629,21 @@ def test_variant(parent_variant, modification):
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/evolution/self_improvement_coordinator.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # ==================================================================================================
 # === EnkiBot Self-Improvement Coordinator (Placeholder) ===
 # ==================================================================================================
@@ -2351,6 +2688,21 @@ class SelfImprovementCoordinator:
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/lang/__init__.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # This directory holds the language packs (JSON files) for EnkiBot.
 # Each file corresponds to a language code (e.g., 'en', 'ru') and contains
 # all user-facing strings and system prompts for that language.
@@ -2360,37 +2712,43 @@ class SelfImprovementCoordinator:
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/main.py ---
 ======================================================================
 
-# ==================================================================================================
-# === EnkiBot Main Entry Point ===
-# ==================================================================================================
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# enkibot/main.py
 import os
 import logging
 import asyncio
 from typing import Optional 
-from telegram import Update # <--- IMPORT Update HERE
+from telegram import Update 
 from telegram.ext import Application 
 
 from enkibot import config
 from enkibot.utils.logging_config import setup_logging
 from enkibot.utils.database import initialize_database
-from enkibot.core.bot import EnkiBot
-# ... (rest of your main.py, the run_backfill_async and main functions)
+# --- MODIFIED IMPORT ---
+from enkibot.app import EnkiBotApplication 
+# --- END MODIFICATION ---
 
-# Logger will be configured by setup_logging
 logger: Optional[logging.Logger] = None 
-
-async def run_backfill_async(): 
-    local_logger = logging.getLogger(__name__ + ".backfill") 
-    local_logger.info("Starting one-time script to backfill name variations for existing users...")
-    # ... (rest of the backfill logic, keeping it commented out for now as it needs careful handling)
-    # from enkibot.utils.database import DatabaseManager
-    # from enkibot.core.llm_services import LLMServices
-    # from enkibot.modules.profile_manager import ProfileManager
-    # ...
-    local_logger.info("Backfill script (manual run from main.py) finished or was skipped.")
 
 def clear_terminal():
     os.system('cls' if os.name == 'nt' else 'clear')
+
+# Commented out backfill for now, as it needs careful setup if run from here
+# async def run_backfill_async(): ...
 
 def main() -> None:
     global logger 
@@ -2405,30 +2763,23 @@ def main() -> None:
         logger.critical("FATAL: TELEGRAM_BOT_TOKEN missing. Bot cannot start.")
         return
 
-    # To run the backfill (do this once, carefully, and ensure prompts are correctly sourced):
-    # logger.info("Attempting to run async backfill script...")
-    # try:
-    #     asyncio.run(run_backfill_async())
-    # except RuntimeError as e:
-    #     if "cannot be called from a running event loop" in str(e).lower():
-    #         logger.warning(f"Backfill script not run: {e}. Consider running it separately if needed.")
-    #     else:
-    #         logger.error(f"Error during backfill execution: {e}", exc_info=True)
-    # except Exception as e:
-    #     logger.error(f"Error during backfill execution: {e}", exc_info=True)
-    # logger.info("Continuing with bot startup...")
-
     try:
-        logger.info("Initializing Telegram Application...")
-        application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+        logger.info("Initializing Telegram PTB Application...")
+        ptb_app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
         
-        logger.info("Initializing EnkiBot...")
-        enkibot_instance = EnkiBot(application) 
-        enkibot_instance.register_handlers(application) 
+        logger.info("Initializing EnkiBotApplication...")
+        # --- MODIFIED BOT INSTANTIATION ---
+        enkibot_app_instance = EnkiBotApplication(ptb_app) 
+        enkibot_app_instance.register_handlers() # Call the method to register handlers
+        # --- END MODIFICATION ---
 
         logger.info("Starting EnkiBot polling...")
-        # Now Update is defined
-        application.run_polling(allowed_updates=Update.ALL_TYPES) 
+        # The run method is now part of EnkiBotApplication, or keep polling here
+        # For simplicity, keeping polling here:
+        ptb_app.run_polling(allowed_updates=Update.ALL_TYPES) 
+        # Alternatively, if you add a run() method to EnkiBotApplication:
+        # enkibot_app_instance.run() 
+        
         logger.info("EnkiBot has stopped.")
     except Exception as e:
         logger.critical(f"Unrecoverable error during bot setup or run: {e}", exc_info=True)
@@ -2441,6 +2792,21 @@ if __name__ == '__main__':
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/modules/__init__.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # This file intentionally left blank.
 
 
@@ -2448,7 +2814,22 @@ if __name__ == '__main__':
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/modules/api_router.py ---
 ======================================================================
 
-﻿# ==================================================================================================
+﻿# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# ==================================================================================================
 # === EnkiBot API Router ===
 # ==================================================================================================
 import logging
@@ -2604,6 +2985,21 @@ class ApiRouter:
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/modules/base_module.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # ==================================================================================================
 # === EnkiBot Base Module ===
 # ==================================================================================================
@@ -2631,7 +3027,22 @@ class BaseModule:
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/modules/fact_extractor.py ---
 ======================================================================
 
-﻿# ==================================================================================================
+﻿# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# ==================================================================================================
 # === EnkiBot Fact Extractor ===
 # ==================================================================================================
 # This module uses linguistic rules and morphological analysis to extract specific
@@ -2722,209 +3133,416 @@ def find_user_search_query_in_text(text: str) -> str | None:
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/modules/intent_recognizer.py ---
 ======================================================================
 
-# <<<--- DIAGNOSTIC PRINT IR-1: VERY TOP OF INTENT_RECOGNIZER.PY --- >>>
-print(f"%%%%% EXECUTING INTENT_RECOGNIZER.PY - VERSION FROM: {__file__} %%%%%") 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# enkibot/core/language_service.py
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 import json
-from typing import Dict, Any, Optional, TYPE_CHECKING
+import os
+import re
+from typing import Dict, Any, Optional, List
 
-if TYPE_CHECKING:
-    from enkibot.core.llm_services import LLMServices 
+from telegram import Update 
+
+from enkibot import config 
+from enkibot.core.llm_services import LLMServices 
+from enkibot.utils.database import DatabaseManager 
 
 logger = logging.getLogger(__name__)
 
-class IntentRecognizer:
-    # <<<--- DIAGNOSTIC PRINT IR-2: INSIDE CLASS DEFINITION --- >>>
-    print("%%%%% IntentRecognizer CLASS DEFINITION BEING PARSED %%%%%")
-
-    def __init__(self, llm_services: 'LLMServices'): 
-        # <<<--- DIAGNOSTIC PRINT IR-3: START OF IntentRecognizer __INIT__ --- >>>
-        print("%%%%% IntentRecognizer __init__ STARTING %%%%%")
-        logger.info("IntentRecognizer __init__ STARTING")
+class LanguageService:
+    def __init__(self, 
+                 llm_services: LLMServices, 
+                 db_manager: DatabaseManager,
+                 lang_packs_dir: str = config.LANGUAGE_PACKS_DIR, 
+                 default_lang: str = config.DEFAULT_LANGUAGE):
+        
+        logger.info("LanguageService __init__ STARTING")
         self.llm_services = llm_services
+        self.db_manager = db_manager
+        self.lang_packs_dir = lang_packs_dir
+        self.default_language = default_lang
+        self.primary_fallback_lang = default_lang 
+        self.secondary_fallback_lang = "ru"
+
+        self.language_packs: Dict[str, Dict[str, Any]] = {}
+        self.llm_prompt_sets: Dict[str, Dict[str, Dict[str, str]]] = {}
+        self.response_strings: Dict[str, Dict[str, str]] = {}
         
-        # <<< --- DIAGNOSTIC PRINT IR-4: END OF IntentRecognizer __INIT__ --- >>>
-        if hasattr(self, 'analyze_weather_request_with_llm') and callable(getattr(self, 'analyze_weather_request_with_llm')):
-            logger.info("DIAGNOSTIC (IntentRecognizer.__init__): self.analyze_weather_request_with_llm IS a callable attribute.")
-        else:
-            logger.error("DIAGNOSTIC (IntentRecognizer.__init__): self.analyze_weather_request_with_llm IS MISSING or NOT CALLABLE!")
-        if hasattr(self, 'classify_master_intent') and callable(getattr(self, 'classify_master_intent')):
-            logger.info("DIAGNOSTIC (IntentRecognizer.__init__): self.classify_master_intent IS a callable attribute.")
-        else:
-            logger.error("DIAGNOSTIC (IntentRecognizer.__init__): self.classify_master_intent IS MISSING or NOT CALLABLE!")
-        print("%%%%% IntentRecognizer __init__ COMPLETED %%%%%")
-        logger.info("IntentRecognizer __init__ COMPLETED")
+        self.current_lang: str = self.default_language
+        self.current_llm_prompt_sets: Dict[str, Dict[str, str]] = {}
+        self.current_response_strings: Dict[str, str] = {}
+        self.current_lang_pack_full: Dict[str, Any] = {}
 
+        self._load_language_packs() 
+        logger.info("LanguageService __init__ COMPLETED")
 
-    async def classify_master_intent(self, text: str, lang_code: str, 
-                                     system_prompt: str, user_prompt_template: str) -> str:
-        # ... (method content as previously provided in message #22)
-        logger.info(f"Classifying master intent (lang: {lang_code}): '{text[:100]}...'")
-        user_prompt = user_prompt_template.format(text_to_classify=text)
-        messages_for_api = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+    def _load_language_packs(self):
+        self.language_packs = {}
+        self.llm_prompt_sets = {}
+        self.response_strings = {}
+        if not os.path.exists(self.lang_packs_dir):
+            logger.error(f"Language packs directory not found: {self.lang_packs_dir}")
+            try:
+                os.makedirs(self.lang_packs_dir, exist_ok=True)
+                logger.info(f"Created language packs directory: {self.lang_packs_dir}")
+            except OSError as e:
+                logger.error(f"Could not create language packs directory {self.lang_packs_dir}: {e}")
         
-        response_format_arg = {}
-        if self.llm_services.openai_model_id and \
-           any(model_prefix in self.llm_services.openai_model_id for model_prefix in ["gpt-4", "gpt-3.5-turbo", "gpt-4o"]):
-             response_format_arg = {"response_format": {"type": "json_object"}}
-
-        classified_intent_value = "UNKNOWN_INTENT" 
-
-        try:
-            completion_str = await self.llm_services.call_openai_llm(
-                messages_for_api, temperature=0.0, max_tokens=100,
-                **response_format_arg 
-            )
-            if completion_str:
+        for lang_file in os.listdir(self.lang_packs_dir):
+            if lang_file.endswith(".json"):
+                lang_code = lang_file[:-5]
+                file_path = os.path.join(self.lang_packs_dir, lang_file)
                 try:
-                    clean_comp_str = completion_str.strip()
-                    if clean_comp_str.startswith("```json"):
-                        clean_comp_str = clean_comp_str[7:]
-                    if clean_comp_str.endswith("```"):
-                        clean_comp_str = clean_comp_str[:-3]
-                    
-                    data = json.loads(clean_comp_str.strip())
-                    intent_from_json = data.get("intent", data.get("INTENT")) 
+                    with open(file_path, 'r', encoding='utf-8-sig') as f: 
+                        pack_content = json.load(f)
+                        self.language_packs[lang_code] = pack_content
+                        self.llm_prompt_sets[lang_code] = pack_content.get("prompts", {})
+                        self.response_strings[lang_code] = pack_content.get("responses", {})
+                        logger.info(f"Successfully loaded language pack: {lang_code} from {file_path}")
+                except json.JSONDecodeError as jde:
+                    logger.error(f"Error decoding JSON from language file: {lang_file}. Error: {jde.msg} at L{jde.lineno} C{jde.colno} (char {jde.pos})", exc_info=False)
+                except Exception as e:
+                    logger.error(f"Error loading language file {lang_file}: {e}", exc_info=True)
+        
+        self._set_current_language_internals(self.default_language)
 
-                    if intent_from_json and isinstance(intent_from_json, str):
-                        processed_intent = intent_from_json.strip().strip('_').upper().replace(" ", "_")
-                        known_categories = ["WEATHER_QUERY", "NEWS_QUERY", "USER_PROFILE_QUERY", "MESSAGE_ANALYSIS_QUERY", "GENERAL_CHAT", "UNKNOWN_INTENT"]
-                        if processed_intent in known_categories:
-                            classified_intent_value = processed_intent
-                            logger.info(f"Master intent classified as: {classified_intent_value} via JSON.")
-                        else:
-                            logger.warning(f"LLM JSON with unknown category '{processed_intent}'. Raw: '{intent_from_json}'. Defaulting UNKNOWN.")
-                    else:
-                        logger.warning(f"LLM JSON for master intent missing 'intent' key or not string. Data: {data}. Defaulting UNKNOWN.")
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to decode JSON from master_intent_classifier. LLM raw: '{completion_str}'. Attempting direct parse.")
-                    raw_intent = completion_str.strip().strip('_').upper().replace(" ", "_")
-                    known_categories = ["WEATHER_QUERY", "NEWS_QUERY", "USER_PROFILE_QUERY", "MESSAGE_ANALYSIS_QUERY", "GENERAL_CHAT", "UNKNOWN_INTENT"] 
-                    if raw_intent in known_categories:
-                        classified_intent_value = raw_intent
-                        logger.info(f"Master intent classified as: {classified_intent_value} via direct string parse fallback.")
-                    else:
-                         logger.warning(f"Direct string parse fallback failed for intent: '{raw_intent}'. Defaulting UNKNOWN.")
-            else:
-                logger.warning("Master intent classification LLM call returned no content.")
-        except Exception as e:
-            logger.error(f"Error during master intent classification LLM call: {e}", exc_info=True)
-        
-        return classified_intent_value
+    def _set_current_language_internals(self, lang_code_to_set: str):
+        chosen_lang_code = lang_code_to_set
+        if chosen_lang_code not in self.language_packs:
+            logger.warning(f"Language pack for initially requested '{chosen_lang_code}' not found.")
+            if self.primary_fallback_lang in self.language_packs:
+                logger.info(f"Falling back to primary fallback: '{self.primary_fallback_lang}'.")
+                chosen_lang_code = self.primary_fallback_lang
+            elif self.secondary_fallback_lang in self.language_packs:
+                logger.info(f"Primary fallback '{self.primary_fallback_lang}' not found. Falling back to secondary: '{self.secondary_fallback_lang}'.")
+                chosen_lang_code = self.secondary_fallback_lang
+            elif self.language_packs: 
+                first_available = next(iter(self.language_packs))
+                logger.error(f"Fallbacks ('{self.primary_fallback_lang}', '{self.secondary_fallback_lang}') not found. Using first available: '{first_available}'.")
+                chosen_lang_code = first_available
+            else: 
+                logger.critical("CRITICAL: No language packs loaded at all. Service may be impaired.")
+                self.current_lang = "none" 
+                self.current_lang_pack_full = {}; self.current_llm_prompt_sets = {}; self.current_response_strings = {}
+                return
 
-    async def analyze_weather_request_with_llm(self, text: str, lang_code: str, 
-                                               system_prompt: str, user_prompt_template: Optional[str]) -> Dict[str, Any]:
-        # <<<--- DIAGNOSTIC PRINT IR-5: INSIDE analyze_weather_request_with_llm --- >>>
-        print(f"%%%%% IntentRecognizer.analyze_weather_request_with_llm CALLED with text: {text[:30]}... %%%%%")
-        logger.info(f"DIAGNOSTIC: analyze_weather_request_with_llm CALLED for text: '{text[:30]}...'")
+        self.current_lang = chosen_lang_code
+        self.current_lang_pack_full = self.language_packs.get(chosen_lang_code, {})
+        self.current_llm_prompt_sets = self.llm_prompt_sets.get(chosen_lang_code, {})
+        self.current_response_strings = self.response_strings.get(chosen_lang_code, {})
         
-        logger.info(f"Analyzing weather request type (lang: {lang_code}): '{text}' with LLM.")
-        user_prompt = (user_prompt_template or "{text}").format(text=text) 
-        messages_for_api = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
-        
-        response_format_arg = {}
-        if self.llm_services.openai_model_id and \
-           any(model_prefix in self.llm_services.openai_model_id for model_prefix in ["gpt-4", "gpt-3.5-turbo", "gpt-4o"]):
-             response_format_arg = {"response_format": {"type": "json_object"}}
-        
-        default_response = {"type": "current"} 
+        if not self.current_llm_prompt_sets and not self.current_response_strings:
+             logger.error(f"Language '{self.current_lang}' pack loaded, but it seems empty (no 'prompts' or 'responses').")
+        else:
+            logger.info(f"LanguageService: Successfully set current language context to: '{self.current_lang}'")
 
+    async def _create_and_load_language_pack(self, new_lang_code: str, update_context: Optional[Update] = None) -> bool:
+        logger.info(f"LanguageService: Attempting to create language pack for new language: {new_lang_code}")
+        english_pack_key = "en" # Source language for translation
+        if english_pack_key not in self.language_packs:
+            logger.error(f"Cannot create new language pack: Source English ('{english_pack_key}') pack not found.")
+            if update_context and update_context.effective_message:
+                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback", 
+                                                                                           "My apologies, I'm having trouble setting up support for this language right now (missing base files)."))
+            return False
+
+        english_pack_content_str = json.dumps(self.language_packs[english_pack_key], ensure_ascii=False, indent=2)
+        target_language_name = new_lang_code 
+
+        translation_system_prompt = (
+             f"You are an expert translation AI. Your task is to translate a complete JSON language pack from English to {target_language_name} (language code: {new_lang_code}).\n"
+            "You MUST maintain the original JSON structure and all original keys (e.g., \"prompts\", \"responses\", \"weather_conditions_map\", \"days_of_week\", and all keys within them). Only translate the string values associated with the keys.\n"
+            "The output MUST be a single, valid JSON object and nothing else. Do not add any explanatory text, comments, or markdown before or after the JSON.\n"
+            "Ensure all translated strings are appropriate for a friendly AI assistant and are natural-sounding in the target language. Pay special attention to escaping characters within JSON strings if necessary (e.g. double quotes inside a string should be \\\", newlines as \\n)."
+        )
+        translation_user_prompt = f"Translate the following English JSON language pack to {target_language_name} ({new_lang_code}):\n\n{english_pack_content_str}"
+        
+        messages_for_api = [{"role": "system", "content": translation_system_prompt}, {"role": "user", "content": translation_user_prompt}]
+        response_format_arg = {"response_format": {"type": "json_object"}}
+        
+        translated_content_str: Optional[str] = None
         try:
-            completion_str = await self.llm_services.call_openai_llm(
-                messages_for_api, 
-                temperature=0, 
-                **response_format_arg
+            # Use specific model for translation from config
+            translator_model_id = config.OPENAI_TRANSLATION_MODEL_ID 
+            logger.info(f"Using model {translator_model_id} for language pack translation to {new_lang_code}")
+            translated_content_str = await self.llm_services.call_openai_llm(
+                messages_for_api, model_id=translator_model_id, 
+                temperature=0.1, max_tokens=4000, **response_format_arg
             )
-            if completion_str:
-                logger.info(f"LLM response for weather analysis: {completion_str}")
-                clean_comp_str = completion_str.strip()
-                if clean_comp_str.startswith("```json"):
-                    clean_comp_str = clean_comp_str[7:]
-                if clean_comp_str.endswith("```"):
-                    clean_comp_str = clean_comp_str[:-3]
-                
-                return json.loads(clean_comp_str)
+        except Exception as e:
+            logger.error(f"LLM call itself failed during translation for {new_lang_code}: {e}", exc_info=True)
+            if update_context and update_context.effective_message:
+                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
+            return False
+
+        if not translated_content_str:
+            logger.error(f"LLM failed to provide a translation string for {new_lang_code}.")
+            if update_context and update_context.effective_message:
+                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
+            return False
+        
+        clean_response = translated_content_str.strip() 
+        try:
+            match = re.search(r"```json\s*(.*?)\s*```", clean_response, re.DOTALL | re.IGNORECASE)
+            if match: clean_response = match.group(1).strip()
             else:
-                logger.warning("LLM returned no content for weather analysis.")
-        except json.JSONDecodeError as e:
-            logger.error(f"Error decoding JSON from LLM for weather analysis: '{completion_str}'. Error: {e}", exc_info=True)
-        except Exception as e:
-            logger.error(f"Error in LLM call during weather request analysis: {e}", exc_info=True)
-        
-        return default_response
-
-    async def extract_location_with_llm(self, text: str, lang_code: str, 
-                                        system_prompt: str, user_prompt_template: Optional[str]) -> Optional[str]:
-        # ... (method content as previously provided in message #22)
-        logger.info(f"Requesting LLM location extraction from text (lang: {lang_code}): '{text}'")
-        user_prompt = (user_prompt_template or "{text}").format(text=text)
-        messages_for_api = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
-        
-        location = None
-        try:
-            if self.llm_services.is_provider_configured("openai"):
-                completion = await self.llm_services.call_openai_llm(
-                    messages_for_api,
-                    temperature=0, 
-                    max_tokens=50 
-                )
-                if completion: location = completion.strip()
+                if clean_response.startswith("```json"): clean_response = clean_response[7:]
+                if clean_response.endswith("```"): clean_response = clean_response[:-3]
+            clean_response = clean_response.strip()
             
-            if not location and self.llm_services.is_provider_configured("groq"): 
-                logger.info("OpenAI location extraction failed or not configured, trying Groq as fallback.")
-                completion = await self.llm_services.call_llm_api(
-                    provider_name="Groq", 
-                    api_key=self.llm_services.groq_api_key, 
-                    endpoint_url=self.llm_services.groq_endpoint_url, 
-                    model_id=self.llm_services.groq_model_id, 
-                    messages=messages_for_api,
-                    temperature=0, max_tokens=50
-                )
-                if completion: location = completion.strip()
+            logger.debug(f"Attempting to parse cleaned LLM translation for {new_lang_code}: '{clean_response[:300]}...'")
+            translated_pack_content = json.loads(clean_response) 
+            
+            if not all(k in translated_pack_content for k in ["prompts", "responses", "weather_conditions_map", "days_of_week"]):
+                logger.error(f"Translated pack for {new_lang_code} is missing core top-level keys. Aborting save.")
+                raise ValueError("Translated JSON missing core keys.")
 
+            new_pack_path = os.path.join(self.lang_packs_dir, f"{new_lang_code}.json")
+            with open(new_pack_path, 'w', encoding='utf-8') as f: 
+                json.dump(translated_pack_content, f, ensure_ascii=False, indent=2)
+            logger.info(f"Successfully created and saved new language pack: {new_lang_code}.json")
+            
+            self.language_packs[new_lang_code] = translated_pack_content
+            self.llm_prompt_sets[new_lang_code] = translated_pack_content.get("prompts", {})
+            self.response_strings[new_lang_code] = translated_pack_content.get("responses", {})
+            logger.info(f"New language pack for {new_lang_code} is now available at runtime.")
+            return True
+        except json.JSONDecodeError as jde:
+            logger.error(
+                f"Failed to decode LLM translation JSON for {new_lang_code}. Error: {jde.msg} "
+                f"at L{jde.lineno} C{jde.colno} (char {jde.pos}). "
+                f"Nearby: '{clean_response[max(0, jde.pos-50):jde.pos+50]}'", 
+                exc_info=False 
+            )
+            log_limit = 3000
+            full_resp_to_log = translated_content_str 
+            if len(full_resp_to_log) < log_limit: logger.debug(f"Full problematic translated content for {new_lang_code}:\n{full_resp_to_log}")
+            else: logger.debug(f"Problematic translated content (first {log_limit} chars) for {new_lang_code}:\n{full_resp_to_log[:log_limit]}")
+            if update_context and update_context.effective_message:
+                await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
+            return False
         except Exception as e:
-            logger.error(f"Error during LLM location extraction: {e}", exc_info=True)
+            logger.error(f"Error processing/saving new lang pack for {new_lang_code}: {e}", exc_info=True)
+            if update_context and update_context.effective_message: 
+                await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
+            return False
 
-        if location and location.lower() != 'none' and location.strip() != "":
-            logger.info(f"LLM successfully extracted location: '{location}'")
-            return location
+    async def determine_language_context(self, 
+                                         current_message_text: Optional[str], 
+                                         chat_id: Optional[int], 
+                                         update_context: Optional[Update] = None) -> str:
+        """
+        Determines language using LLM based on current message and chat history, sets context,
+        and attempts to create new language packs if needed.
+        """
+        LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD = 0.70  
+        NUM_RECENT_MESSAGES_FOR_CONTEXT = 2 
+        MIN_MESSAGE_LENGTH_FOR_LLM_INPUT = 5 
+        MIN_AGGREGATED_TEXT_LENGTH_FOR_LLM = 15 # Reduced slightly to allow LLM attempt more often
+
+        final_candidate_lang_code = self.current_lang if self.current_lang != "none" else self.default_language
         
-        logger.warning(f"LLM could not extract a location from the text: '{text}'.")
-        return None
+        lang_detector_prompts = self.get_llm_prompt_set("language_detector_llm")
 
+        if not lang_detector_prompts:
+            logger.error("LLM-based language detector prompts are missing. Critical error, cannot proceed with LLM detection.")
+            # Fallback to a very basic or just default if LLM prompts for detection are gone
+            if current_message_text and len(current_message_text.strip()) > 5:
+                try:
+                    # Using simple detect as last resort for this specific call if LLM prompts for it fail
+                    # This is not ideal as we want to move away from langdetect as primary
+                    from langdetect import detect as simple_detect 
+                    final_candidate_lang_code = simple_detect(current_message_text)
+                    logger.warning(f"Used simple langdetect as LLM prompts missing, detected: {final_candidate_lang_code}")
+                except Exception as e_ld:
+                    logger.error(f"Simple langdetect fallback failed: {e_ld}")
+                    final_candidate_lang_code = self.default_language # Absolute fallback
+            self._set_current_language_internals(final_candidate_lang_code)
+            return self.current_lang
 
-    async def extract_news_topic_with_llm(self, text: str, lang_code: str, 
-                                          system_prompt: str, user_prompt_template: Optional[str]) -> Optional[str]:
-        # ... (method content as previously provided in message #22)
-        logger.info(f"Requesting LLM news topic extraction from text (lang: {lang_code}): '{text}'")
-        user_prompt = (user_prompt_template or "{text}").format(text=text)
-        messages_for_api = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+        history_context_str = ""
+        latest_message_payload = current_message_text or "" # Ensure it's a string
+
+        if chat_id and (not latest_message_payload or len(latest_message_payload) < MIN_MESSAGE_LENGTH_FOR_LLM_INPUT):
+            logger.debug(f"Current msg short or absent, fetching {NUM_RECENT_MESSAGES_FOR_CONTEXT} recent msgs from chat {chat_id}.")
+            try:
+                if self.db_manager:
+                    recent_messages = await self.db_manager.get_recent_chat_texts(chat_id, limit=NUM_RECENT_MESSAGES_FOR_CONTEXT)
+                    if recent_messages:
+                        history_context_str = "\n".join(recent_messages)
+                        logger.debug(f"Fetched {len(recent_messages)} messages for lang detection context.")
+                else: 
+                    logger.warning("db_manager not available in determine_language_context for history fetch.")
+            except Exception as e: 
+                logger.error(f"Error fetching recent chat texts for lang detection: {e}", exc_info=True)
+
+        user_prompt_for_llm_detector: str
+        user_template_key = "user_template_full_context" if history_context_str else "user_template_latest_only"
+        user_prompt_template = lang_detector_prompts.get(user_template_key)
+
+        if not user_prompt_template:
+            logger.error(f"User prompt template '{user_template_key}' missing for LLM language detector.")
+            self._set_current_language_internals(final_candidate_lang_code) # Fallback
+            return self.current_lang
+            
+        user_prompt_for_llm_detector = user_prompt_template.format(
+            latest_message=latest_message_payload, 
+            history_context=history_context_str  # Will be empty if no history
+        )
+            
+        messages_for_llm_detector = [
+            {"role": "system", "content": lang_detector_prompts["system"]},
+            {"role": "user", "content": user_prompt_for_llm_detector}
+        ]
+
+        llm_detected_primary_lang: Optional[str] = None
+        llm_detected_confidence: float = 0.0
         
-        topic = None
+        # Only call LLM if there's some text to analyze
+        if latest_message_payload.strip() or history_context_str.strip():
+            try:
+                detection_model_id = config.OPENAI_CLASSIFICATION_MODEL_ID # Use the classification model
+                logger.info(f"Requesting LLM language detection with model {detection_model_id}...")
+                
+                completion_str = await self.llm_services.call_openai_llm(
+                    messages_for_llm_detector, model_id=detection_model_id,
+                    temperature=0.0, max_tokens=150, response_format={"type": "json_object"}
+                )
+                if completion_str:
+                    detection_result = json.loads(completion_str)
+                    logger.info(f"LLM language detection response: {detection_result}")
+                    llm_detected_primary_lang = detection_result.get("primary_lang", "").lower()
+                    confidence_val = detection_result.get("confidence", 0.0)
+                    llm_detected_confidence = float(confidence_val) if isinstance(confidence_val, (float, int, str)) else 0.0
+                else:
+                    logger.warning("LLM language detector returned no content.")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to decode JSON from LLM language detector: {e}. Raw: {completion_str if 'completion_str' in locals() else 'N/A'}")
+            except Exception as e:
+                logger.error(f"Error calling LLM for language detection: {e}", exc_info=True)
+        else:
+            logger.info("No text (current or history) for LLM language detection. Using current/default logic.")
+
+        # Logic to use LLM detection result
+        if llm_detected_primary_lang and llm_detected_confidence >= LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD:
+            logger.info(f"LLM confidently detected primary lang '{llm_detected_primary_lang}' (conf: {llm_detected_confidence:.2f}).")
+            final_candidate_lang_code = llm_detected_primary_lang
+        else:
+            if llm_detected_primary_lang: 
+                 logger.warning(f"LLM detected lang '{llm_detected_primary_lang}' but confidence ({llm_detected_confidence:.2f}) is below threshold ({LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD}). Using current/default: {final_candidate_lang_code}")
+            else: 
+                logger.info(f"LLM language detection not used or failed. Using current/default candidate: {final_candidate_lang_code}")
+        
+        # Set language context based on final_candidate_lang_code
+        if final_candidate_lang_code not in self.language_packs:
+            logger.warning(f"Language pack for candidate '{final_candidate_lang_code}' not found. Attempting creation.")
+            if await self._create_and_load_language_pack(final_candidate_lang_code, update_context=update_context):
+                self._set_current_language_internals(final_candidate_lang_code)
+            else: 
+                logger.warning(f"Failed to create pack for '{final_candidate_lang_code}'. Applying prioritized fallbacks.")
+                self._set_current_language_internals(self.default_language) 
+        else: 
+            self._set_current_language_internals(final_candidate_lang_code)
+            
+        return self.current_lang
+    
+    def get_llm_prompt_set(self, key: str) -> Optional[Dict[str, str]]:
+        current_prompts_to_check = self.current_llm_prompt_sets
+        prompt_set = current_prompts_to_check.get(key)
+        
+        if not prompt_set: 
+            logger.debug(f"LLM prompt set key '{key}' not in current lang '{self.current_lang}'. Trying '{self.primary_fallback_lang}'.")
+            current_prompts_to_check = self.llm_prompt_sets.get(self.primary_fallback_lang, {})
+            prompt_set = current_prompts_to_check.get(key)
+            if not prompt_set and self.primary_fallback_lang != self.secondary_fallback_lang: 
+                 logger.debug(f"LLM prompt set key '{key}' not in '{self.primary_fallback_lang}'. Trying '{self.secondary_fallback_lang}'.")
+                 current_prompts_to_check = self.llm_prompt_sets.get(self.secondary_fallback_lang, {})
+                 prompt_set = current_prompts_to_check.get(key)
+        
+        if not prompt_set:
+            logger.error(f"LLM prompt set for key '{key}' ultimately not found.")
+            return None
+        if not isinstance(prompt_set, dict) or "system" not in prompt_set: 
+            logger.error(f"LLM prompt set for key '{key}' (found in lang or fallback) is malformed: {prompt_set}")
+            return None
+        return prompt_set
+
+    def get_response_string(self, key: str, default_value: Optional[str] = None, **kwargs) -> str:
+        raw_string = self.current_response_strings.get(key)
+        lang_tried = self.current_lang
+
+        if raw_string is None: 
+            lang_tried = self.primary_fallback_lang
+            raw_string = self.response_strings.get(self.primary_fallback_lang, {}).get(key)
+            if raw_string is None and self.primary_fallback_lang != self.secondary_fallback_lang: 
+                lang_tried = self.secondary_fallback_lang
+                raw_string = self.response_strings.get(self.secondary_fallback_lang, {}).get(key)
+
+        if raw_string is None: 
+            if default_value is not None: raw_string = default_value
+            else: logger.error(f"Response string for key '{key}' ultimately not found. Using placeholder."); raw_string = f"[[Missing response: {key}]]"
+        
         try:
-            if self.llm_services.is_provider_configured("openai"): 
-                completion = await self.llm_services.call_openai_llm(
-                    messages_for_api,
-                    temperature=0,
-                    max_tokens=50 
-                )
-                if completion: topic = completion.strip()
-        except Exception as e:
-            logger.error(f"Error during LLM news topic extraction: {e}", exc_info=True)
-
-        if topic and topic.lower() != 'none' and topic.strip() != "":
-            logger.info(f"LLM successfully extracted news topic: '{topic}'")
-            return topic
-        
-        logger.info(f"LLM found no specific news topic in '{text}'. General news might be fetched.")
-        return None
+            return raw_string.format(**kwargs) if kwargs else raw_string
+        except KeyError as e:
+            logger.error(f"Missing format key '{e}' in response string for key '{key}' (lang tried: {lang_tried}, raw: '{raw_string}')")
+            # Fallback to English if formatting failed for the current/fallback language's string
+            english_raw = self.response_strings.get("en", {}).get(key, f"[[Format error & missing English for key: {key}]]")
+            try: 
+                return english_raw.format(**kwargs) if kwargs else english_raw
+            except KeyError: # If English also has formatting issues or missing key
+                return f"[[Formatting error for response key: {key} - check placeholders/English pack]]"
 
 
 ======================================================================
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/modules/profile_manager.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # ==================================================================================================
 # === EnkiBot Profile Manager ===
 # ==================================================================================================
@@ -3023,6 +3641,21 @@ class ProfileManager:
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/modules/response_generator.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # ==================================================================================================
 # === EnkiBot Response Generator ===
 # ==================================================================================================
@@ -3171,6 +3804,21 @@ class ResponseGenerator: # Make sure this class definition is present and correc
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/utils/__init__.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # This file makes the 'utils' directory a Python package.
 
 
@@ -3178,249 +3826,397 @@ class ResponseGenerator: # Make sure this class definition is present and correc
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/utils/database.py ---
 ======================================================================
 
-# ==================================================================================================
-# === EnkiBot Database Utilities ===
-# ==================================================================================================
-# Handles all database interactions for EnkiBot, including setup,
-# connection management, and data querying/storage.
-# ==================================================================================================
-import logging
-import pyodbc
-from typing import List, Dict, Any, Optional
+# enkibot/core/language_service.py
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from enkibot import config # For DB_CONNECTION_STRING
+import logging
+import json
+import os
+import re
+from typing import Dict, Any, Optional, List
+
+from telegram import Update 
+
+from enkibot import config 
+from enkibot.core.llm_services import LLMServices 
+from enkibot.utils.database import DatabaseManager 
 
 logger = logging.getLogger(__name__)
 
-class DatabaseManager:
-    def __init__(self, connection_string: Optional[str]):
-        self.connection_string = connection_string
-        if not self.connection_string:
-            logger.warning("Database connection string is not configured. Database operations will be disabled.")
+class LanguageService:
+    def __init__(self, 
+                 llm_services: LLMServices, 
+                 db_manager: DatabaseManager,
+                 lang_packs_dir: str = config.LANGUAGE_PACKS_DIR, 
+                 default_lang: str = config.DEFAULT_LANGUAGE):
+        
+        logger.info("LanguageService __init__ STARTING")
+        self.llm_services = llm_services
+        self.db_manager = db_manager
+        self.lang_packs_dir = lang_packs_dir
+        self.default_language = default_lang
+        self.primary_fallback_lang = default_lang 
+        self.secondary_fallback_lang = "ru"
 
-    def get_db_connection(self) -> Optional[pyodbc.Connection]:
-        """Establishes and returns a new database connection."""
-        if not self.connection_string:
-            return None
+        self.language_packs: Dict[str, Dict[str, Any]] = {}
+        self.llm_prompt_sets: Dict[str, Dict[str, Dict[str, str]]] = {}
+        self.response_strings: Dict[str, Dict[str, str]] = {}
+        
+        self.current_lang: str = self.default_language
+        self.current_llm_prompt_sets: Dict[str, Dict[str, str]] = {}
+        self.current_response_strings: Dict[str, str] = {}
+        self.current_lang_pack_full: Dict[str, Any] = {}
+
+        self._load_language_packs() 
+        logger.info("LanguageService __init__ COMPLETED")
+
+    def _load_language_packs(self):
+        self.language_packs = {}
+        self.llm_prompt_sets = {}
+        self.response_strings = {}
+        if not os.path.exists(self.lang_packs_dir):
+            logger.error(f"Language packs directory not found: {self.lang_packs_dir}")
+            try:
+                os.makedirs(self.lang_packs_dir, exist_ok=True)
+                logger.info(f"Created language packs directory: {self.lang_packs_dir}")
+            except OSError as e:
+                logger.error(f"Could not create language packs directory {self.lang_packs_dir}: {e}")
+        
+        for lang_file in os.listdir(self.lang_packs_dir):
+            if lang_file.endswith(".json"):
+                lang_code = lang_file[:-5]
+                file_path = os.path.join(self.lang_packs_dir, lang_file)
+                try:
+                    with open(file_path, 'r', encoding='utf-8-sig') as f: 
+                        pack_content = json.load(f)
+                        self.language_packs[lang_code] = pack_content
+                        self.llm_prompt_sets[lang_code] = pack_content.get("prompts", {})
+                        self.response_strings[lang_code] = pack_content.get("responses", {})
+                        logger.info(f"Successfully loaded language pack: {lang_code} from {file_path}")
+                except json.JSONDecodeError as jde:
+                    logger.error(f"Error decoding JSON from language file: {lang_file}. Error: {jde.msg} at L{jde.lineno} C{jde.colno} (char {jde.pos})", exc_info=False)
+                except Exception as e:
+                    logger.error(f"Error loading language file {lang_file}: {e}", exc_info=True)
+        
+        self._set_current_language_internals(self.default_language)
+
+
+    def _set_current_language_internals(self, lang_code_to_set: str):
+        chosen_lang_code = lang_code_to_set
+        if chosen_lang_code not in self.language_packs:
+            logger.warning(f"Language pack for initially requested '{chosen_lang_code}' not found.")
+            if self.primary_fallback_lang in self.language_packs:
+                logger.info(f"Falling back to primary fallback: '{self.primary_fallback_lang}'.")
+                chosen_lang_code = self.primary_fallback_lang
+            elif self.secondary_fallback_lang in self.language_packs:
+                logger.info(f"Primary fallback '{self.primary_fallback_lang}' not found. Falling back to secondary: '{self.secondary_fallback_lang}'.")
+                chosen_lang_code = self.secondary_fallback_lang
+            elif self.language_packs: 
+                first_available = next(iter(self.language_packs))
+                logger.error(f"Fallbacks ('{self.primary_fallback_lang}', '{self.secondary_fallback_lang}') not found. Using first available: '{first_available}'.")
+                chosen_lang_code = first_available
+            else: 
+                logger.critical("CRITICAL: No language packs loaded at all. Service may be impaired.")
+                self.current_lang = "none" 
+                self.current_lang_pack_full = {}
+                self.current_llm_prompt_sets = {}
+                self.current_response_strings = {}
+                return
+
+        self.current_lang = chosen_lang_code
+        self.current_lang_pack_full = self.language_packs.get(chosen_lang_code, {})
+        self.current_llm_prompt_sets = self.llm_prompt_sets.get(chosen_lang_code, {})
+        self.current_response_strings = self.response_strings.get(chosen_lang_code, {})
+        
+        if not self.current_llm_prompt_sets and not self.current_response_strings:
+             logger.error(f"Language '{self.current_lang}' pack loaded, but it seems empty (no 'prompts' or 'responses').")
+        else:
+            logger.info(f"LanguageService: Successfully set current language context to: '{self.current_lang}'")
+
+    async def _create_and_load_language_pack(self, new_lang_code: str, update_context: Optional[Update] = None) -> bool:
+        logger.info(f"LanguageService: Attempting to create language pack for new language: {new_lang_code}")
+        english_pack_key = "en"
+        if english_pack_key not in self.language_packs:
+            logger.error(f"Cannot create new language pack: Source English ('{english_pack_key}') pack not found.")
+            if update_context and update_context.effective_message:
+                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback", 
+                                                                                           "My apologies, I'm having trouble setting up support for this language right now (missing base files)."))
+            return False
+
+        english_pack_content_str = json.dumps(self.language_packs[english_pack_key], ensure_ascii=False, indent=2)
+        target_language_name = new_lang_code 
+
+        translation_system_prompt = (
+             f"You are an expert translation AI. Your task is to translate a complete JSON language pack from English to {target_language_name} (language code: {new_lang_code}).\n"
+            "You MUST maintain the original JSON structure and all original keys (e.g., \"prompts\", \"responses\", \"weather_conditions_map\", \"days_of_week\", and all keys within them). Only translate the string values associated with the keys.\n"
+            "The output MUST be a single, valid JSON object and nothing else. Do not add any explanatory text, comments, or markdown before or after the JSON.\n"
+            "Ensure all translated strings are appropriate for a friendly AI assistant and are natural-sounding in the target language. Pay special attention to escaping characters within JSON strings if necessary (e.g. double quotes inside a string should be \\\", newlines as \\n)."
+        )
+        translation_user_prompt = f"Translate the following English JSON language pack to {target_language_name} ({new_lang_code}):\n\n{english_pack_content_str}"
+        
+        messages_for_api = [{"role": "system", "content": translation_system_prompt}, {"role": "user", "content": translation_user_prompt}]
+        response_format_arg = {"response_format": {"type": "json_object"}}
+        
+        translated_content_str: Optional[str] = None
         try:
-            # autocommit=False by default, manage transactions explicitly
-            conn = pyodbc.connect(self.connection_string, autocommit=False)
-            logger.debug("Database connection established.")
-            return conn
-        except pyodbc.Error as ex:
-            logger.error(f"Database connection error: {ex.args[0] if ex.args else ''} - {ex}", exc_info=True)
-            return None
+            # Use specific model for translation from config
+            translator_model_id = config.OPENAI_TRANSLATION_MODEL_ID 
+            logger.info(f"Using model {translator_model_id} for language pack translation to {new_lang_code}")
+            translated_content_str = await self.llm_services.call_openai_llm(
+                messages_for_api, model_id=translator_model_id, 
+                temperature=0.1, max_tokens=4000, **response_format_arg
+            )
         except Exception as e:
-            logger.error(f"Unexpected error establishing database connection: {e}", exc_info=True)
-            return None
+            logger.error(f"LLM call itself failed during translation for {new_lang_code}: {e}", exc_info=True)
+            if update_context and update_context.effective_message:
+                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
+            return False
 
-    async def execute_query(self, query: str, params: Optional[tuple] = None, fetch_one: bool = False, fetch_all: bool = False, commit: bool = False):
-        """Executes a given SQL query with optional parameters and commit."""
-        if not self.connection_string:
-            logger.warning("Query execution skipped: Database not configured.")
-            return None if fetch_one or fetch_all else (True if commit else False)
-
-
-        conn = self.get_db_connection()
-        if not conn:
-            return None if fetch_one or fetch_all else (True if commit else False)
-
-        try:
-            with conn.cursor() as cursor:
-                logger.debug(f"Executing query: {query[:150]}... with params: {params}")
-                if params:
-                    cursor.execute(query, params)
-                else:
-                    cursor.execute(query)
-                
-                if commit:
-                    conn.commit()
-                    logger.debug("Query committed successfully.")
-                    return True
-
-                if fetch_one:
-                    row = cursor.fetchone()
-                    logger.debug(f"Query fetch_one result: {row}")
-                    return row
-                if fetch_all:
-                    rows = cursor.fetchall()
-                    logger.debug(f"Query fetch_all result count: {len(rows)}")
-                    return rows
-            return True # Default success for non-fetching, non-committing queries
-        except pyodbc.Error as ex:
-            logger.error(f"Database query error on '{query[:100]}...': {ex}", exc_info=True)
-            try: conn.rollback(); logger.info("Transaction rolled back.")
-            except pyodbc.Error as rb_ex: logger.error(f"Error during rollback: {rb_ex}", exc_info=True)
-            return None if fetch_one or fetch_all else False
-        except Exception as e:
-            logger.error(f"Unexpected error during query execution '{query[:100]}...': {e}", exc_info=True)
-            return None if fetch_one or fetch_all else False
-        finally:
-            if conn:
-                conn.close()
-                logger.debug("Database connection closed post-execution.")
-    async def get_recent_chat_texts(self, chat_id: int, limit: int = 3) -> List[str]:
-        """
-        Fetches the text of the last N messages from a given chat_id from ChatLog.
-        Filters out potential null or empty messages.
-        """
-        if not self.connection_string:
-            return []
+        if not translated_content_str:
+            logger.error(f"LLM failed to provide a translation string for {new_lang_code}.")
+            if update_context and update_context.effective_message:
+                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
+            return False
         
-        query = """
-            SELECT TOP (?) MessageText
-            FROM ChatLog
-            WHERE ChatID = ? AND MessageText IS NOT NULL AND MessageText != ''
-            ORDER BY Timestamp DESC
-        """
-        # Ensure 'limit' is a positive integer
-        actual_limit = max(1, limit) 
-        
-        rows = await self.execute_query(query, (actual_limit, chat_id), fetch_all=True)
-        if rows:
-            # Messages are fetched in reverse chronological order, reverse again for natural order
-            return [row.MessageText for row in reversed(rows) if row.MessageText] 
-        return []
-    async def log_chat_message_and_upsert_user(
-        self, chat_id: int, user_id: int, username: Optional[str],
-        first_name: Optional[str], last_name: Optional[str],
-        message_id: int, message_text: str, preferred_language: Optional[str] = None
-    ) -> Optional[str]:
-        """Logs a chat message and creates or updates the user profile."""
-        if not self.connection_string: return None
-        upsert_user_sql = """
-            MERGE UserProfiles AS t
-            USING (VALUES(?,?,?,?,GETDATE(),?)) AS s(UserID,Username,FirstName,LastName,LastSeen,PreferredLanguage)
-            ON t.UserID = s.UserID
-            WHEN MATCHED THEN
-                UPDATE SET Username=s.Username, FirstName=s.FirstName, LastName=s.LastName, LastSeen=s.LastSeen, MessageCount=ISNULL(t.MessageCount,0)+1, PreferredLanguage=ISNULL(s.PreferredLanguage, t.PreferredLanguage)
-            WHEN NOT MATCHED THEN
-                INSERT(UserID,Username,FirstName,LastName,LastSeen,MessageCount,ProfileLastUpdated, PreferredLanguage)
-                VALUES(s.UserID,s.Username,s.FirstName,s.LastName,s.LastSeen,1,GETDATE(),s.PreferredLanguage)
-            OUTPUT $action AS Action;
-        """
-        user_params = (user_id, username, first_name, last_name, preferred_language)
-        
-        chat_log_sql = "INSERT INTO ChatLog (ChatID, UserID, Username, FirstName, MessageID, MessageText, Timestamp) VALUES (?, ?, ?, ?, ?, ?, GETDATE())"
-        chat_log_params = (chat_id, user_id, username, first_name, message_id, message_text)
-
-        conn = self.get_db_connection()
-        if not conn: return None
-        action_taken = None
+        clean_response = translated_content_str.strip() 
         try:
-            with conn.cursor() as cursor:
-                cursor.execute(upsert_user_sql, user_params)
-                row = cursor.fetchone()
-                if row: action_taken = row.Action
-                cursor.execute(chat_log_sql, chat_log_params)
-            conn.commit()
-            logger.info(f"Logged message for user {user_id}. Profile action: {action_taken}")
-            return action_taken
-        except pyodbc.Error as ex:
-            logger.error(f"DB error logging/upserting user {user_id}: {ex}", exc_info=True); conn.rollback()
-            return None
-        finally:
-            if conn: conn.close()
-
-    async def get_conversation_history(self, chat_id: int, limit: int = 20) -> List[Dict[str, str]]:
-        query = "SELECT TOP (?) Role, Content FROM ConversationHistory WHERE ChatID = ? ORDER BY Timestamp DESC"
-        rows = await self.execute_query(query, (limit, chat_id), fetch_all=True)
-        return [{"role": row.Role.lower(), "content": row.Content} for row in reversed(rows)] if rows else []
-
-    async def save_to_conversation_history(self, chat_id: int, entity_id: int, message_id_telegram: Optional[int], role: str, content: str):
-        query = "INSERT INTO ConversationHistory (ChatID, UserID, MessageID, Role, Content, Timestamp) VALUES (?, ?, ?, ?, ?, GETDATE())"
-        await self.execute_query(query, (chat_id, entity_id, message_id_telegram, role, content), commit=True)
-
-    async def get_user_profile_notes(self, user_id: int) -> Optional[str]:
-        row = await self.execute_query("SELECT Notes FROM UserProfiles WHERE UserID = ?", (user_id,), fetch_one=True)
-        return row.Notes if row and row.Notes else None
-
-    async def update_user_profile_notes(self, user_id: int, notes: str):
-        await self.execute_query("UPDATE UserProfiles SET Notes = ?, ProfileLastUpdated = GETDATE() WHERE UserID = ?", (notes, user_id), commit=True)
-        logger.info(f"Profile notes updated for user {user_id}.")
-
-    async def save_user_name_variations(self, user_id: int, variations: List[str]):
-        if not self.connection_string or not variations: return
-        sql_merge = """
-            MERGE INTO UserNameVariations AS t USING (SELECT ? AS UserID, ? AS NameVariation) AS s
-            ON (t.UserID = s.UserID AND t.NameVariation = s.NameVariation)
-            WHEN NOT MATCHED THEN INSERT (UserID, NameVariation) VALUES (s.UserID, s.NameVariation);
-        """
-        conn = self.get_db_connection()
-        if not conn: return
-        try:
-            with conn.cursor() as cursor:
-                params_to_insert = [(user_id, var) for var in variations if var and str(var).strip()]
-                if params_to_insert: cursor.executemany(sql_merge, params_to_insert)
-            conn.commit()
-            logger.info(f"Saved/updated {len(params_to_insert)} name vars for user {user_id}.")
-        except pyodbc.Error as ex:
-            logger.error(f"DB error saving name vars for user {user_id}: {ex}", exc_info=True); conn.rollback()
-        finally:
-            if conn: conn.close()
+            match = re.search(r"```json\s*(.*?)\s*```", clean_response, re.DOTALL | re.IGNORECASE)
+            if match: clean_response = match.group(1).strip()
+            else:
+                if clean_response.startswith("```json"): clean_response = clean_response[7:]
+                if clean_response.endswith("```"): clean_response = clean_response[:-3]
+            clean_response = clean_response.strip()
             
-    async def find_user_profiles_by_name_variation(self, name_variation_query: str) -> List[Dict[str, Any]]:
-        query = """
-            SELECT DISTINCT up.UserID, up.FirstName, up.LastName, up.Username, up.Notes
-            FROM UserProfiles up JOIN UserNameVariations unv ON up.UserID = unv.UserID
-            WHERE unv.NameVariation = ?
+            logger.debug(f"Attempting to parse cleaned LLM translation for {new_lang_code}: '{clean_response[:300]}...'")
+            translated_pack_content = json.loads(clean_response) 
+            
+            if not all(k in translated_pack_content for k in ["prompts", "responses", "weather_conditions_map", "days_of_week"]):
+                logger.error(f"Translated pack for {new_lang_code} is missing core top-level keys. Aborting save.")
+                raise ValueError("Translated JSON missing core keys.")
+
+            new_pack_path = os.path.join(self.lang_packs_dir, f"{new_lang_code}.json")
+            with open(new_pack_path, 'w', encoding='utf-8') as f: 
+                json.dump(translated_pack_content, f, ensure_ascii=False, indent=2)
+            logger.info(f"Successfully created and saved new language pack: {new_lang_code}.json")
+            
+            self.language_packs[new_lang_code] = translated_pack_content
+            self.llm_prompt_sets[new_lang_code] = translated_pack_content.get("prompts", {})
+            self.response_strings[new_lang_code] = translated_pack_content.get("responses", {})
+            logger.info(f"New language pack for {new_lang_code} is now available at runtime.")
+            return True
+        except json.JSONDecodeError as jde:
+            logger.error(
+                f"Failed to decode LLM translation JSON for {new_lang_code}. Error: {jde.msg} "
+                f"at L{jde.lineno} C{jde.colno} (char {jde.pos}). "
+                f"Nearby: '{clean_response[max(0, jde.pos-50):jde.pos+50]}'", 
+                exc_info=False 
+            )
+            log_limit = 3000
+            full_resp_to_log = translated_content_str 
+            if len(full_resp_to_log) < log_limit: logger.debug(f"Full problematic translated content for {new_lang_code}:\n{full_resp_to_log}")
+            else: logger.debug(f"Problematic translated content (first {log_limit} chars) for {new_lang_code}:\n{full_resp_to_log[:log_limit]}")
+            if update_context and update_context.effective_message:
+                await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
+            return False
+        except Exception as e:
+            logger.error(f"Error processing/saving new lang pack for {new_lang_code}: {e}", exc_info=True)
+            if update_context and update_context.effective_message: 
+                await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
+            return False
+
+    async def determine_language_context(self, 
+                                         current_message_text: Optional[str], 
+                                         chat_id: Optional[int], 
+                                         update_context: Optional[Update] = None) -> str:
         """
-        rows = await self.execute_query(query, (name_variation_query.lower(),), fetch_all=True)
-        return [{"UserID": r.UserID, "FirstName": r.FirstName, "LastName": r.LastName, "Username": r.Username, "Notes": r.Notes} for r in rows] if rows else []
+        Determines language using LLM based on current message and chat history, sets context,
+        and attempts to create new language packs if needed.
+        """
+        LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD = 0.70  
+        NUM_RECENT_MESSAGES_FOR_CONTEXT = 2 
+        MIN_MESSAGE_LENGTH_FOR_LLM_INPUT = 5 
+        MIN_AGGREGATED_TEXT_LENGTH_FOR_LLM = 15 
 
-    async def get_user_messages_from_chat_log(self, user_id: int, chat_id: int, limit: int = 10) -> List[str]:
-        query = "SELECT TOP (?) MessageText FROM ChatLog WHERE UserID = ? AND ChatID = ? AND MessageText IS NOT NULL AND MessageText != '' ORDER BY Timestamp DESC"
-        rows = await self.execute_query(query, (limit, user_id, chat_id), fetch_all=True)
-        return [row.MessageText for row in rows] if rows else []
+        final_candidate_lang_code = self.current_lang if self.current_lang != "none" else self.default_language
+        
+        lang_detector_prompts = self.get_llm_prompt_set("language_detector_llm")
 
-def initialize_database():
-    if not config.DB_CONNECTION_STRING:
-        logger.warning("Cannot initialize database: Connection string not configured.")
-        return
-    db_mngr = DatabaseManager(config.DB_CONNECTION_STRING) # Use the manager
-    conn = db_mngr.get_db_connection() # Get connection via manager
-    if not conn: return
-    conn.autocommit = True 
-    table_queries = { # Simplified from your example for brevity, ensure all are there
-        "UserProfiles": "CREATE TABLE UserProfiles (UserID BIGINT PRIMARY KEY, Username NVARCHAR(255) NULL, FirstName NVARCHAR(255) NULL, LastName NVARCHAR(255) NULL, LastSeen DATETIME2 DEFAULT GETDATE(), MessageCount INT DEFAULT 0, PreferredLanguage NVARCHAR(10) NULL, Notes NVARCHAR(MAX) NULL, ProfileLastUpdated DATETIME2 DEFAULT GETDATE());",
-        "UserNameVariations": "CREATE TABLE UserNameVariations (VariationID INT IDENTITY(1,1) PRIMARY KEY, UserID BIGINT NOT NULL, NameVariation NVARCHAR(255) NOT NULL, FOREIGN KEY (UserID) REFERENCES UserProfiles(UserID) ON DELETE CASCADE);",
-        "IX_UserNameVariations_UserID_NameVariation": "CREATE UNIQUE INDEX IX_UserNameVariations_UserID_NameVariation ON UserNameVariations (UserID, NameVariation);",
-        "ConversationHistory": "CREATE TABLE ConversationHistory (MessageDBID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, UserID BIGINT NOT NULL, MessageID BIGINT NULL, Role NVARCHAR(50) NOT NULL, Content NVARCHAR(MAX) NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
-        "IX_ConversationHistory_ChatID_Timestamp": "CREATE INDEX IX_ConversationHistory_ChatID_Timestamp ON ConversationHistory (ChatID, Timestamp DESC);",
-        "ChatLog": "CREATE TABLE ChatLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, UserID BIGINT NOT NULL, Username NVARCHAR(255) NULL, FirstName NVARCHAR(255) NULL, MessageID BIGINT NOT NULL, MessageText NVARCHAR(MAX) NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
-        "IX_ChatLog_ChatID_Timestamp": "CREATE INDEX IX_ChatLog_ChatID_Timestamp ON ChatLog (ChatID, Timestamp DESC);",
-        "IX_ChatLog_UserID": "CREATE INDEX IX_ChatLog_UserID ON ChatLog (UserID);",
-        "ErrorLog": "CREATE TABLE ErrorLog (ErrorID INT IDENTITY(1,1) PRIMARY KEY, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, LogLevel NVARCHAR(50) NOT NULL, LoggerName NVARCHAR(255) NULL, ModuleName NVARCHAR(255) NULL, FunctionName NVARCHAR(255) NULL, LineNumber INT NULL, ErrorMessage NVARCHAR(MAX) NOT NULL, ExceptionInfo NVARCHAR(MAX) NULL);",
-        "IX_ErrorLog_Timestamp": "CREATE INDEX IX_ErrorLog_Timestamp ON ErrorLog (Timestamp DESC);",
-    }
-    try:
-        with conn.cursor() as cursor:
-            logger.info("Initializing database tables...")
-            for name, query in table_queries.items():
-                is_idx = name.startswith("IX_")
-                obj_type = "INDEX" if is_idx else "TABLE"
-                obj_name = name if is_idx else name
-                tbl_for_idx = name.split("_on_")[-1] if "_on_" in name else (name.split("_")[1] if is_idx and len(name.split("_")) > 1 else name)
+        if not lang_detector_prompts: 
+            logger.error("LLM-based language detector prompts are missing. Cannot use LLM for detection. Using current/default.")
+            self._set_current_language_internals(final_candidate_lang_code) 
+            return self.current_lang
+
+        history_context_str = ""
+        latest_message_payload = current_message_text or "" 
+
+        if chat_id and (not latest_message_payload or len(latest_message_payload.strip()) < MIN_MESSAGE_LENGTH_FOR_LLM_INPUT):
+            logger.debug(f"Current msg short or absent, fetching {NUM_RECENT_MESSAGES_FOR_CONTEXT} recent msgs from chat {chat_id}.")
+            try:
+                if self.db_manager:
+                    recent_messages = await self.db_manager.get_recent_chat_texts(chat_id, limit=NUM_RECENT_MESSAGES_FOR_CONTEXT)
+                    if recent_messages:
+                        history_context_str = "\n".join(recent_messages)
+                        logger.debug(f"Fetched {len(recent_messages)} messages for lang detection context.")
+                else: logger.warning("db_manager not available in determine_language_context for history fetch.")
+            except Exception as e: logger.error(f"Error fetching recent chat texts for lang detection: {e}", exc_info=True)
+        
+        # Ensure user_prompt_template is chosen correctly based on history presence
+        user_prompt_template_key = "user_template_full_context" if history_context_str else "user_template_latest_only"
+        user_prompt_template = lang_detector_prompts.get(user_prompt_template_key)
+
+        if not user_prompt_template:
+            logger.error(f"User prompt template '{user_prompt_template_key}' missing for LLM language detector.")
+            self._set_current_language_internals(final_candidate_lang_code) # Fallback
+            return self.current_lang
+            
+        user_prompt_for_llm_detector = user_prompt_template.format(
+            latest_message=latest_message_payload, 
+            history_context=history_context_str 
+        )
+            
+        messages_for_llm_detector = [
+            {"role": "system", "content": lang_detector_prompts["system"]},
+            {"role": "user", "content": user_prompt_for_llm_detector}
+        ]
+
+        llm_detected_primary_lang: Optional[str] = None
+        llm_detected_confidence: float = 0.0
+        
+        aggregated_text_for_llm_prompt = f"{history_context_str}\n{latest_message_payload}".strip()
+
+        if aggregated_text_for_llm_prompt and len(aggregated_text_for_llm_prompt) >= MIN_AGGREGATED_TEXT_LENGTH_FOR_LLM:
+            try:
+                detection_model_id = config.OPENAI_CLASSIFICATION_MODEL_ID 
+                logger.info(f"Requesting LLM language detection (model: {detection_model_id})...")
                 
-                check_q = "SELECT name FROM sys.indexes WHERE name = ? AND object_id = OBJECT_ID(?)" if is_idx else "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?"
-                params_check = (obj_name, tbl_for_idx) if is_idx else (obj_name,)
-                
-                cursor.execute(check_q, params_check)
-                if cursor.fetchone(): logger.info(f"{obj_type} '{obj_name}' already exists.")
-                else: logger.info(f"{obj_type} '{obj_name}' not found. Creating..."); cursor.execute(query); logger.info(f"{obj_type} '{obj_name}' created.")
-            logger.info("Database initialization check complete.")
-    except Exception as e: logger.error(f"DB init error: {e}", exc_info=True)
-    finally:
-        if conn: conn.autocommit = False; conn.close()
+                completion_str = await self.llm_services.call_openai_llm(
+                    messages_for_llm_detector, model_id=detection_model_id,
+                    temperature=0.0, max_tokens=150, response_format={"type": "json_object"}
+                )
+                if completion_str:
+                    try:
+                        detection_result = json.loads(completion_str)
+                        logger.info(f"LLM language detection response: {detection_result}")
+                        llm_detected_primary_lang = str(detection_result.get("primary_lang", "")).lower() # Ensure string and lower
+                        confidence_val = detection_result.get("confidence", 0.0)
+                        try:
+                            llm_detected_confidence = float(confidence_val)
+                        except (ValueError, TypeError):
+                            logger.warning(f"Could not convert LLM confidence '{confidence_val}' to float. Defaulting to 0.0.")
+                            llm_detected_confidence = 0.0
+                    except json.JSONDecodeError as e:
+                         logger.error(f"Failed to decode JSON from LLM language detector: {e}. Raw: {completion_str}")
+                else:
+                    logger.warning("LLM language detector returned no content.")
+            except Exception as e:
+                logger.error(f"Error calling LLM for language detection: {e}", exc_info=True)
+        else:
+            logger.info("Not enough aggregated text for LLM language detection. Using current/default logic.")
 
-# backfill_existing_user_name_variations should be moved to main.py or a utility script
-# to be run in a context where ProfileManager is available.
+        if llm_detected_primary_lang and llm_detected_confidence >= LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD:
+            logger.info(f"LLM confidently detected primary lang '{llm_detected_primary_lang}' (conf: {llm_detected_confidence:.2f}).")
+            final_candidate_lang_code = llm_detected_primary_lang
+        else:
+            if llm_detected_primary_lang: 
+                 logger.warning(f"LLM detected lang '{llm_detected_primary_lang}' but confidence ({llm_detected_confidence:.2f}) "
+                               f"< threshold ({LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD}). Using current/default: {final_candidate_lang_code}")
+            else: 
+                logger.info(f"LLM language detection not used or failed. Using current/default candidate: {final_candidate_lang_code}")
+        
+        if final_candidate_lang_code not in self.language_packs:
+            logger.warning(f"Language pack for candidate '{final_candidate_lang_code}' not found. Attempting creation.")
+            if await self._create_and_load_language_pack(final_candidate_lang_code, update_context=update_context):
+                self._set_current_language_internals(final_candidate_lang_code)
+            else: 
+                logger.warning(f"Failed to create pack for '{final_candidate_lang_code}'. Applying prioritized fallbacks.")
+                self._set_current_language_internals(self.default_language) 
+        else: 
+            self._set_current_language_internals(final_candidate_lang_code)
+            
+        return self.current_lang
+    
+    def get_llm_prompt_set(self, key: str) -> Optional[Dict[str, str]]:
+        current_prompts_to_check = self.current_llm_prompt_sets
+        prompt_set = current_prompts_to_check.get(key)
+        primary_fallback_lang = self.default_language
+        secondary_fallback_lang = "ru"
+
+        if not prompt_set: 
+            logger.debug(f"LLM prompt set key '{key}' not in current lang '{self.current_lang}'. Trying '{primary_fallback_lang}'.")
+            current_prompts_to_check = self.llm_prompt_sets.get(primary_fallback_lang, {})
+            prompt_set = current_prompts_to_check.get(key)
+            if not prompt_set and primary_fallback_lang != secondary_fallback_lang: 
+                 logger.debug(f"LLM prompt set key '{key}' not in '{primary_fallback_lang}'. Trying '{secondary_fallback_lang}'.")
+                 current_prompts_to_check = self.llm_prompt_sets.get(secondary_fallback_lang, {})
+                 prompt_set = current_prompts_to_check.get(key)
+        
+        if not prompt_set:
+            logger.error(f"LLM prompt set for key '{key}' ultimately not found.")
+            return None
+        if not isinstance(prompt_set, dict) or "system" not in prompt_set: 
+            logger.error(f"LLM prompt set for key '{key}' (found in lang or fallback) is malformed: {prompt_set}")
+            return None
+        return prompt_set
+
+    def get_response_string(self, key: str, default_value: Optional[str] = None, **kwargs) -> str:
+        raw_string = self.current_response_strings.get(key)
+        lang_tried = self.current_lang
+        primary_fallback_lang = self.default_language
+        secondary_fallback_lang = "ru"
+
+        if raw_string is None: 
+            lang_tried = primary_fallback_lang
+            raw_string = self.response_strings.get(primary_fallback_lang, {}).get(key)
+            if raw_string is None and primary_fallback_lang != secondary_fallback_lang: 
+                lang_tried = secondary_fallback_lang
+                raw_string = self.response_strings.get(secondary_fallback_lang, {}).get(key)
+
+        if raw_string is None: 
+            if default_value is not None: raw_string = default_value
+            else: logger.error(f"Response string for key '{key}' ultimately not found. Using placeholder."); raw_string = f"[[Missing response: {key}]]"
+        
+        try:
+            return raw_string.format(**kwargs) if kwargs else raw_string
+        except KeyError as e:
+            logger.error(f"Missing format key '{e}' in response string for key '{key}' (lang tried: {lang_tried}, raw: '{raw_string}')")
+            english_raw = self.response_strings.get("en", {}).get(key, f"[[Format error & missing English for key: {key}]]")
+            try: return english_raw.format(**kwargs) if kwargs else english_raw
+            except KeyError: return f"[[Formatting error for response key: {key} - check placeholders]]"
 
 
 ======================================================================
 --- File: c:/Projects/EnkiBot/EnkiBot/EnkiBot/utils/logging_config.py ---
 ======================================================================
 
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # ==================================================================================================
 # === EnkiBot Logging Configuration ===
 # ==================================================================================================

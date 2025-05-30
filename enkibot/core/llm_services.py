@@ -18,25 +18,40 @@
 # ==================================================================================================
 # === EnkiBot LLM Services ===
 # ==================================================================================================
+# enkibot/core/llm_services.py
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+# (Your GPLv3 Header)
+# enkibot/core/llm_services.py
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
+# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
+# (Your GPLv3 Header)
+
 import logging
 import httpx
-import openai # Direct import for openai.AsyncOpenAI
+import openai 
 import asyncio
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
+
+from enkibot import config # Import config to use its attributes
 
 logger = logging.getLogger(__name__)
 
 class LLMServices:
-    def __init__(self, openai_api_key: Optional[str], openai_model_id: str,
+    def __init__(self, openai_api_key: Optional[str], openai_model_id: str, # This is general default
                  groq_api_key: Optional[str], groq_model_id: str, groq_endpoint_url: str,
                  openrouter_api_key: Optional[str], openrouter_model_id: str, openrouter_endpoint_url: str,
                  google_ai_api_key: Optional[str], google_ai_model_id: str):
         
-        print("***** LLMServices __init__ STARTING *****")
+        print("***** LLMServices __init__ STARTING *****") 
         logger.info("LLMServices __init__ STARTING")
         
         self.openai_api_key = openai_api_key
+        # These are defaults if not overridden by task-specific model IDs from config
         self.openai_model_id = openai_model_id 
+        self.openai_classification_model_id = config.OPENAI_CLASSIFICATION_MODEL_ID
+        self.openai_translation_model_id = config.OPENAI_TRANSLATION_MODEL_ID
+
         self.openai_async_client: Optional[openai.AsyncOpenAI] = None
         if self.openai_api_key:
             try:
@@ -67,21 +82,22 @@ class LLMServices:
         if self.google_ai_api_key: print(f"INFO: Google AI configured with key: {self.google_ai_api_key[:5]}...")
         else: print("WARN: Google AI API key not provided.")
         
-        print("***** LLMServices __init__ COMPLETED *****")
+        print("***** LLMServices __init__ COMPLETED *****") 
         logger.info("LLMServices __init__ COMPLETED")
 
     def is_provider_configured(self, provider_name: str) -> bool:
-        if provider_name == "openai":
+        provider_name_lower = provider_name.lower()
+        if provider_name_lower == "openai":
             return bool(self.openai_async_client and self.openai_api_key)
-        elif provider_name == "groq":
+        elif provider_name_lower == "groq":
             return bool(self.groq_api_key and self.groq_endpoint_url and self.groq_model_id)
-        elif provider_name == "openrouter":
+        elif provider_name_lower == "openrouter":
             return bool(self.openrouter_api_key and self.openrouter_endpoint_url and self.openrouter_model_id)
-        # Add Google AI check if implemented
+        # Add other providers as needed
         return False
 
     async def call_openai_llm(self, messages: List[Dict[str, str]], 
-                              model_id: Optional[str] = None, 
+                              model_id: Optional[str] = None, # Allows overriding model_id for specific tasks
                               temperature: float = 0.7, 
                               max_tokens: int = 2000, 
                               **kwargs) -> Optional[str]:
@@ -91,18 +107,14 @@ class LLMServices:
             print("WARN: OpenAI client not init or key missing in call_openai_llm.")
             return None
         
-        actual_model_id = model_id or self.openai_model_id
+        # Use passed model_id if provided, otherwise the instance's default openai_model_id
+        actual_model_id = model_id or self.openai_model_id 
         logger.info(f"Calling OpenAI (model: {actual_model_id}) with {len(messages)} messages.")
         print(f"INFO: Calling OpenAI (model: {actual_model_id}) messages_count: {len(messages)}")
-        # logger.debug(f"OpenAI messages: {messages}") # Potentially very verbose
 
-        call_params = {
-            "model": actual_model_id, "messages": messages,
-            "temperature": temperature, "max_tokens": max_tokens,
-            **kwargs 
-        }
+        call_params = { "model": actual_model_id, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, **kwargs }
         try:
-            print(f"DEBUG: Before OpenAI completions.create with params: {call_params.get('model')}, temp: {call_params.get('temperature')}")
+            print(f"DEBUG: Before OpenAI completions.create with params: model='{call_params.get('model')}', temp: {call_params.get('temperature')}")
             completion = await self.openai_async_client.chat.completions.create(**call_params)
             print(f"DEBUG: OpenAI completion object received: {type(completion)}")
             if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
@@ -112,7 +124,7 @@ class LLMServices:
             logger.warning(f"OpenAI call to {actual_model_id} returned no content or unexpected structure. Choices: {completion.choices}")
             print(f"WARN: OpenAI call to {actual_model_id} no content. Choices: {completion.choices}")
             return None
-        except openai.APIStatusError as e: # More specific error type
+        except openai.APIStatusError as e: 
             logger.error(f"OpenAI API Status Error (model: {actual_model_id}): HTTP Status {e.status_code} - {e.message}", exc_info=False)
             print(f"ERROR: OpenAI API Status Error (model: {actual_model_id}): HTTP Status {e.status_code} - {e.message}")
             logger.debug(f"OpenAI API Full Status Error Details: {e.response.text if e.response else 'No response body'}")
@@ -129,22 +141,23 @@ class LLMServices:
 
     async def call_llm_api(self, provider_name: str, api_key: Optional[str], endpoint_url: Optional[str], 
                            model_id: str, messages: List[Dict[str, str]], 
-                           temperature: float = 0.7, max_tokens: int = 2000) -> Optional[str]:
+                           temperature: float = 0.7, max_tokens: int = 2000,
+                           **kwargs 
+                           ) -> Optional[str]:
         print(f"DEBUG: Attempting call_llm_api for {provider_name}. Key: {'Set' if api_key else 'Not Set'}")
         if not api_key or not endpoint_url:
             logger.warning(f"{provider_name} not configured (key or URL missing). Skipping call.")
             print(f"WARN: {provider_name} not configured in call_llm_api.")
             return None
         
-        logger.info(f"Calling {provider_name} ({model_id}) with {len(messages)} messages.")
+        logger.info(f"Calling {provider_name} (model: {model_id}) with {len(messages)} messages.")
         print(f"INFO: Calling {provider_name} ({model_id}) messages_count: {len(messages)}")
-        # logger.debug(f"{provider_name} messages: {messages}") # Potentially verbose
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         if provider_name.lower() == "openrouter": 
             headers.update({"HTTP-Referer": "http://localhost:8000", "X-Title": "EnkiBot"}) 
 
-        payload = {"model": model_id, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+        payload = {"model": model_id, "messages": messages, "max_tokens": max_tokens, "temperature": temperature, **kwargs}
         
         try:
             print(f"DEBUG: Before {provider_name} POST to {endpoint_url}. Model: {model_id}")
@@ -161,8 +174,8 @@ class LLMServices:
             print(f"WARN: {provider_name} call to {model_id} no content. Data: {data.get('choices')}")
             return None
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP Error for {provider_name} ({model_id}): {e.response.status_code} - {e.response.text}", exc_info=False)
-            print(f"ERROR: HTTP Error for {provider_name} ({model_id}): {e.response.status_code} - {e.response.text}")
+            logger.error(f"HTTP Error for {provider_name} ({model_id}): {e.response.status_code} - Response: {e.response.text[:500]}...", exc_info=False)
+            print(f"ERROR: HTTP Error for {provider_name} ({model_id}): {e.response.status_code} - {e.response.text[:100]}")
             logger.debug(f"{provider_name} Full Error Response Content: {e.response.content}")
             return None
         except Exception as e:
@@ -171,61 +184,49 @@ class LLMServices:
             return None
 
     async def race_llm_calls(self, messages: List[Dict[str, str]]) -> Optional[str]:
-        tasks = []
-        # Store provider name with task for better logging
         task_info: List[Tuple[asyncio.Task, str]] = []
 
-        print("DEBUG: Preparing tasks for race_llm_calls.")
+        # print("DEBUG: Preparing tasks for race_llm_calls.") # Keep if useful
         if self.is_provider_configured("openai"):
             task = asyncio.create_task(self.call_openai_llm(messages, model_id=self.openai_model_id))
             task_info.append((task, "OpenAI"))
-            print("DEBUG: OpenAI task created for race.")
+            # print("DEBUG: OpenAI task created for race.")
         if self.is_provider_configured("groq"):
             task = asyncio.create_task(self.call_llm_api("Groq", self.groq_api_key, self.groq_endpoint_url, self.groq_model_id, messages))
             task_info.append((task, "Groq"))
-            print("DEBUG: Groq task created for race.")
+            # print("DEBUG: Groq task created for race.")
         if self.is_provider_configured("openrouter"):
             task = asyncio.create_task(self.call_llm_api("OpenRouter", self.openrouter_api_key, self.openrouter_endpoint_url, self.openrouter_model_id, messages))
             task_info.append((task, "OpenRouter"))
-            print("DEBUG: OpenRouter task created for race.")
+            # print("DEBUG: OpenRouter task created for race.")
         
         if not task_info:
             logger.warning("No LLM providers configured for racing calls.")
-            print("WARN: No LLM providers for race_llm_calls.")
+            # print("WARN: No LLM providers for race_llm_calls.")
             return None
 
         logger.info(f"Racing LLM calls to: {[name for _, name in task_info]}")
-        print(f"INFO: Racing LLM calls to: {[name for _, name in task_info]}")
+        # print(f"INFO: Racing LLM calls to: {[name for _, name in task_info]}")
         
-        for future, provider_name in [(ti[0], ti[1]) for ti in task_info]: # Iterate through original task_info list
-            # This inner loop structure with as_completed is a bit off.
-            # Correct way: iterate through as_completed(just the tasks)
-            # then find which provider it was. Simpler:
-            pass # Will be rewritten below
+        # Create a mapping from task object to provider name for easy lookup
+        task_to_provider_map = {task_obj: name for task_obj, name in task_info}
+        tasks_only = [task_obj for task_obj, _ in task_info]
 
-        # Corrected loop for asyncio.as_completed
-        tasks_only = [ti[0] for ti in task_info]
         for future in asyncio.as_completed(tasks_only):
-            provider_name_for_log = "Unknown"
-            # Find the provider name for the completed future
-            for task_obj, name_str in task_info:
-                if task_obj == future:
-                    provider_name_for_log = name_str
-                    break
+            provider_name_for_log = task_to_provider_map.get(future, "UnknownProvider") 
             try:
                 result = await future
                 if result and result.strip():
                     logger.info(f"Successful response from {provider_name_for_log} in race.")
-                    print(f"INFO: Successful response from {provider_name_for_log} in race.")
+                    # print(f"INFO: Successful response from {provider_name_for_log} in race.") 
                     return result.strip()
                 else:
-                    # This case (result is None or empty) is already logged in individual call methods
-                    logger.warning(f"{provider_name_for_log} returned no content in race.")
-                    print(f"WARN: {provider_name_for_log} returned no content in race.")
+                    logger.warning(f"{provider_name_for_log} returned no content in race (details should be in provider-specific logs).")
+                    # print(f"WARN: {provider_name_for_log} returned no content in race.")
             except Exception as e: 
-                logger.warning(f"Provider {provider_name_for_log} failed in race_llm_calls (error should be logged by provider's method): {type(e).__name__}")
-                print(f"WARN: Provider {provider_name_for_log} failed in race: {type(e).__name__}")
+                logger.warning(f"Provider {provider_name_for_log} task raised an exception during race_llm_calls: {type(e).__name__} - {e} (details should be in provider-specific logs).")
+                # print(f"WARN: Provider {provider_name_for_log} future failed in race: {type(e).__name__} - {e}")
         
         logger.error("All LLM providers failed or returned no content in race_llm_calls.")
-        print("ERROR: All LLM providers failed in race_llm_calls.")
+        # print("ERROR: All LLM providers failed in race_llm_calls.") 
         return None
