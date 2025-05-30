@@ -1,0 +1,74 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>ee702d30-a348-427a-9e6b-3291b7c3ec89</ProjectGuid>
+    <ProjectHome>
+    </ProjectHome>
+    <StartupFile>
+    </StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>enkibot</Name>
+    <RootNamespace>EnkiBot</RootNamespace>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="app.py" />
+    <Compile Include="combine_files.py" />
+    <Compile Include="config.py" />
+    <Compile Include="core\bot.py.bak" />
+    <Compile Include="core\language_service.py" />
+    <Compile Include="core\telegram_handlers.py" />
+    <Compile Include="core\__init__.py" />
+    <Compile Include="evolution\module_tester.py" />
+    <Compile Include="evolution\self_improvement_coordinator.py" />
+    <Compile Include="evolution\__init__.py" />
+    <Compile Include="lang\__init__.py" />
+    <Compile Include="main.py" />
+    <Compile Include="modules\api_router.py" />
+    <Compile Include="modules\base_module.py" />
+    <Compile Include="modules\fact_extractor.py" />
+    <Compile Include="modules\intent_recognizer.py" />
+    <Compile Include="modules\profile_manager.py" />
+    <Compile Include="modules\response_generator.py" />
+    <Compile Include="modules\__init__.py" />
+    <Compile Include="utils\database.py" />
+    <Compile Include="utils\logging_config.py" />
+    <Compile Include="utils\__init__.py" />
+    <Compile Include="__init__.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="core\" />
+    <Folder Include="modules\" />
+    <Folder Include="evolution\" />
+    <Folder Include="lang\" />
+    <Folder Include="utils\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="CONTRIBUTING.md" />
+    <Content Include="core\llm_services.py" />
+    <Content Include="lang\ru.json" />
+    <Content Include="lang\en.json" />
+    <Content Include="LICENSE" />
+    <Content Include="README.md" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+  <!-- Uncomment the CoreCompile target to enable the Build command in
+       Visual Studio and specify your pre- and post-build commands in
+       the BeforeBuild and AfterBuild targets below. -->
+  <!--<Target Name="CoreCompile" />-->
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+</Project>
