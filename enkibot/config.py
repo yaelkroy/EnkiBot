@@ -1,4 +1,5 @@
-﻿# EnkiBot: Advanced Multilingual Telegram AI Assistant
+﻿# enkibot/config.py
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -44,7 +45,11 @@ OPENAI_API_KEY = os.getenv('ENKI_BOT_OPENAI_API_KEY')
 OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4o-mini')                 # General purpose (if not overridden by task-specific models)
 OPENAI_CLASSIFICATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_CLASSIFICATION_MODEL_ID', 'gpt-3.5-turbo') # For faster tasks like intent classification
 OPENAI_TRANSLATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_TRANSLATION_MODEL_ID', 'gpt-4o-mini')      # For language pack creation
-
+OPENAI_MULTIMODAL_IMAGE_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MULTIMODAL_IMAGE_MODEL_ID', 'gpt-4.1-mini')
+OPENAI_DALLE_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_DALLE_MODEL_ID', 'dall-e-3')
+DEFAULT_IMAGE_N = 1
+DEFAULT_IMAGE_SIZE = "1024x1024"
+DEFAULT_IMAGE_QUALITY = "standard"
 # Groq
 GROQ_API_KEY = os.getenv('ENKI_BOT_GROQ_API_KEY')
 GROQ_MODEL_ID = os.getenv('ENKI_BOT_GROQ_MODEL_ID', 'llama-3.3-70b-versatile')

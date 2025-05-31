@@ -27,6 +27,10 @@
     <Compile Include="combine_files.py" />
     <Compile Include="config.py" />
     <Compile Include="core\bot.py.bak" />
+    <Compile Include="core\intent_handlers\general_handler.py" />
+    <Compile Include="core\intent_handlers\image_generation_handler.py" />
+    <Compile Include="core\intent_handlers\news_handler.py" />
+    <Compile Include="core\intent_handlers\weather_handler.py" />
     <Compile Include="core\language_service.py" />
     <Compile Include="core\telegram_handlers.py" />
     <Compile Include="core\__init__.py" />
@@ -38,6 +42,7 @@
     <Compile Include="modules\api_router.py" />
     <Compile Include="modules\base_module.py" />
     <Compile Include="modules\fact_extractor.py" />
+    <Compile Include="modules\image_generation_service.py" />
     <Compile Include="modules\intent_recognizer.py" />
     <Compile Include="modules\profile_manager.py" />
     <Compile Include="modules\response_generator.py" />
@@ -49,6 +54,7 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="core\" />
+    <Folder Include="core\intent_handlers\" />
     <Folder Include="modules\" />
     <Folder Include="evolution\" />
     <Folder Include="lang\" />

@@ -1,3 +1,4 @@
+# enkibot/lang/__init__.py
 # EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
 #

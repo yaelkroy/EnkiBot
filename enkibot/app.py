@@ -1,3 +1,4 @@
+# enkibot/app.py
 # EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
 #
@@ -13,7 +14,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-# enkibot/app.py
+
 import logging
 from telegram.ext import Application
 

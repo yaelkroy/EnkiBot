@@ -1,3 +1,4 @@
+# enkibot/combine_files.py
 # EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
 #
@@ -45,7 +46,7 @@ def get_all_python_files(root_dir):
         for filename in filenames:
             # --- MODIFICATION IS HERE ---
             # Only include files that end with the .py extension.
-            if filename.endswith('.py'):
+            if filename.endswith(('.py','.json')):
                 file_paths.append(os.path.join(dirpath, filename))
                 
     return sorted(file_paths)

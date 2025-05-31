@@ -1,3 +1,4 @@
+# enkibot/modules/intent_recognizer.py
 # EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
 #
@@ -13,27 +14,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-# <<<--- DIAGNOSTIC PRINT IR-1: VERY TOP OF INTENT_RECOGNIZER.PY --- >>>
-# EnkiBot: Advanced Multilingual Telegram AI Assistant
-# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
-# (Your GPLv3 Header)
-
-# <<<--- DIAGNOSTIC PRINT IR-1: VERY TOP OF INTENT_RECOGNIZER.PY --- >>>
-# enkibot/modules/intent_recognizer.py
-# EnkiBot: Advanced Multilingual Telegram AI Assistant
-# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
-# (Your GPLv3 Header)
-# enkibot/modules/intent_recognizer.py
-# EnkiBot: Advanced Multilingual Telegram AI Assistant
-# Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
-# (Your GPLv3 Header)
 
 import logging
 import json
-import re # <--- ***** ADD THIS IMPORT *****
+import re 
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
-from enkibot import config # For model IDs
+from enkibot import config 
 
 if TYPE_CHECKING:
     from enkibot.core.llm_services import LLMServices 
@@ -54,9 +41,7 @@ class IntentRecognizer:
         
         response_format_arg = {}
         classification_model_id = config.OPENAI_CLASSIFICATION_MODEL_ID
-        # Check if the classification_model_id is one known to support JSON object mode
-        if classification_model_id and \
-           any(model_prefix in classification_model_id for model_prefix in ["gpt-4", "gpt-3.5-turbo", "gpt-4o"]):
+        if classification_model_id and any(model_prefix in classification_model_id for model_prefix in ["gpt-4", "gpt-3.5-turbo", "gpt-4o"]):
              response_format_arg = {"response_format": {"type": "json_object"}}
 
         classified_intent_value = "UNKNOWN_INTENT" 
@@ -67,7 +52,7 @@ class IntentRecognizer:
                 messages_for_api, 
                 model_id=classification_model_id, 
                 temperature=0.0, 
-                max_tokens=100,
+                max_tokens=100, 
                 **response_format_arg 
             )
             completion_str_for_log = completion_str if completion_str is not None else "None"
@@ -75,21 +60,22 @@ class IntentRecognizer:
             if completion_str:
                 try:
                     clean_comp_str = completion_str.strip()
-                    # More robustly remove markdown json block using re
                     match = re.search(r"```json\s*(.*?)\s*```", clean_comp_str, re.DOTALL | re.IGNORECASE)
                     if match:
                         clean_comp_str = match.group(1).strip()
-                    elif clean_comp_str.startswith("```"): # Handle simple ``` case
+                    elif clean_comp_str.startswith("```"): 
                         clean_comp_str = clean_comp_str.strip("` \t\n\r")
-                        if clean_comp_str.lower().startswith("json"): # check if 'json' follows ```
-                            clean_comp_str = clean_comp_str[4:].strip() # remove 'json' and strip
+                        if clean_comp_str.lower().startswith("json"): 
+                            clean_comp_str = clean_comp_str[4:].strip() 
                     
                     data = json.loads(clean_comp_str)
                     intent_from_json = data.get("intent", data.get("INTENT")) 
 
                     if intent_from_json and isinstance(intent_from_json, str):
                         processed_intent = intent_from_json.strip().strip('_').upper().replace(" ", "_")
-                        known_categories = ["WEATHER_QUERY", "NEWS_QUERY", "USER_PROFILE_QUERY", "MESSAGE_ANALYSIS_QUERY", "GENERAL_CHAT", "UNKNOWN_INTENT"]
+                        known_categories = ["WEATHER_QUERY", "NEWS_QUERY", "IMAGE_GENERATION_QUERY", 
+                                            "USER_PROFILE_QUERY", "MESSAGE_ANALYSIS_QUERY", 
+                                            "GENERAL_CHAT", "UNKNOWN_INTENT"] 
                         if processed_intent in known_categories:
                             classified_intent_value = processed_intent
                             logger.info(f"Master intent classified as: {classified_intent_value} via JSON.")
@@ -100,13 +86,17 @@ class IntentRecognizer:
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to decode JSON from master_intent_classifier. LLM raw: '{completion_str_for_log}'. Attempting direct parse.")
                     raw_intent = completion_str_for_log.strip().strip('_').upper().replace(" ", "_")
-                    if raw_intent.startswith('{"INTENT":') and raw_intent.endswith('"}'):
+                    if raw_intent.startswith('{') and raw_intent.endswith('}'):
                         try:
-                            raw_intent_data = json.loads(raw_intent) # Try to parse this specific format
-                            raw_intent = raw_intent_data.get("INTENT", raw_intent).strip().strip('_').upper().replace(" ", "_")
-                        except: pass 
-                    
-                    known_categories = ["WEATHER_QUERY", "NEWS_QUERY", "USER_PROFILE_QUERY", "MESSAGE_ANALYSIS_QUERY", "GENERAL_CHAT", "UNKNOWN_INTENT"] 
+                            temp_data = json.loads(raw_intent)
+                            extracted_val = temp_data.get("intent", temp_data.get("INTENT", raw_intent))
+                            raw_intent = str(extracted_val).strip().strip('_').upper().replace(" ", "_")
+                        except json.JSONDecodeError: 
+                            pass 
+
+                    known_categories = ["WEATHER_QUERY", "NEWS_QUERY", "IMAGE_GENERATION_QUERY", 
+                                        "USER_PROFILE_QUERY", "MESSAGE_ANALYSIS_QUERY", 
+                                        "GENERAL_CHAT", "UNKNOWN_INTENT"] 
                     if raw_intent in known_categories:
                         classified_intent_value = raw_intent
                         logger.info(f"Master intent classified as: {classified_intent_value} via direct string parse fallback.")
@@ -145,9 +135,10 @@ class IntentRecognizer:
                 clean_comp_str = completion_str.strip()
                 match = re.search(r"```json\s*(.*?)\s*```", clean_comp_str, re.DOTALL | re.IGNORECASE)
                 if match: clean_comp_str = match.group(1).strip()
-                else:
-                    if clean_comp_str.startswith("```json"): clean_comp_str = clean_comp_str[7:]
-                    if clean_comp_str.endswith("```"): clean_comp_str = clean_comp_str[:-3]                
+                elif clean_comp_str.startswith("```"): 
+                    clean_comp_str = clean_comp_str.strip("` \t\n\r") 
+                    if clean_comp_str.lower().startswith("json"): 
+                        clean_comp_str = clean_comp_str[4:].strip()              
                 return json.loads(clean_comp_str.strip())
             else:
                 logger.warning("LLM returned no content for weather analysis.")
@@ -183,11 +174,101 @@ class IntentRecognizer:
         except Exception as e:
             logger.error(f"Error during LLM location extraction: {e}", exc_info=True)
 
-        if location and location.lower() != 'none' and location.strip() != "":
+        if location and location.lower().strip() not in ["none", "null", "n/a", ""]:
             logger.info(f"LLM successfully extracted location: '{location}'")
             return location
         logger.warning(f"LLM couldn't extract location from: '{text}'.")
         return None
+
+    async def extract_location_from_reply(self, text: str, lang_code: str, 
+                                          system_prompt: str, user_prompt_template: str) -> Optional[str]:
+        logger.info(f"Extracting location from user's reply (lang: {lang_code}): '{text}'")
+        user_prompt = user_prompt_template.format(text=text)
+        messages_for_api = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+        
+        location = None
+        model_to_use = config.OPENAI_CLASSIFICATION_MODEL_ID 
+        try:
+            completion = await self.llm_services.call_openai_llm(
+                messages_for_api,
+                model_id=model_to_use,
+                temperature=0.0,
+                max_tokens=30 
+            )
+            if completion and completion.lower().strip() not in ["none", "null", "n/a", ""]:
+                location = completion.strip().strip('"')
+                logger.info(f"LLM extracted location from reply: '{location}'")
+                return location
+            else:
+                logger.warning(f"LLM indicated no location in reply or returned 'None' for: '{text}'")
+        except Exception as e:
+            logger.error(f"Error during LLM location extraction from reply: {e}", exc_info=True)
+        
+        logger.warning(f"Could not extract a clear location from reply: '{text}'")
+        return None
+
+    # In enkibot/modules/intent_recognizer.py
+    async def extract_topic_from_reply(self, text: str, lang_code: str, 
+                                       system_prompt: str, user_prompt_template: str) -> Optional[str]:
+        logger.info(f"Extracting news topic from user's reply (lang: {lang_code}): '{text}'")
+        user_prompt = user_prompt_template.format(text=text)
+        messages_for_api = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+
+        topic = None
+        model_to_use = config.OPENAI_CLASSIFICATION_MODEL_ID
+        try:
+            completion = await self.llm_services.call_openai_llm(
+                messages_for_api,
+                model_id=model_to_use,
+                temperature=0.0, # Be very deterministic
+                max_tokens=50 
+            )
+            if completion:
+                cleaned_completion = completion.strip().strip('"') 
+                # Check if LLM explicitly returns "None" or if it's very short after cleaning
+                if cleaned_completion.lower() not in ["none", "null", "n/a", ""] and len(cleaned_completion) > 1: # Min length for a topic
+                    topic = cleaned_completion
+                    logger.info(f"LLM extracted topic from reply: '{topic}'")
+                    return topic # Return the extracted topic
+                else:
+                    logger.warning(f"LLM indicated no topic in reply or returned 'None'/'empty' for: '{text}'")
+            else:
+                logger.warning(f"LLM call for topic extraction from reply returned no content for: '{text}'")
+            
+        except Exception as e:
+            logger.error(f"Error during LLM topic extraction from reply: {e}", exc_info=True)
+        
+        logger.warning(f"Could not extract a clear topic from reply: '{text}'. Defaulting to None.")
+        return None # Return None if no clear topic extracted or error
+    
+    async def extract_image_prompt_with_llm(self, text: str, lang_code: str, 
+                                             system_prompt: str, user_prompt_template: str) -> Optional[str]:
+        logger.info(f"Attempting to extract image generation prompt from text (lang: {lang_code}): '{text}'")
+        user_prompt = user_prompt_template.format(text=text)
+        messages_for_api = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+        
+        model_to_use = config.OPENAI_CLASSIFICATION_MODEL_ID 
+        
+        try:
+            completion = await self.llm_services.call_openai_llm(
+                messages_for_api, 
+                model_id=model_to_use, 
+                temperature=0.2, 
+                max_tokens=150 
+            )
+            
+            if completion and completion.lower().strip() not in ["none", "null", "n/a", ""]:
+                clean_prompt = completion.strip().strip('"')
+                # Further cleaning if LLM adds conversational wrappers
+                clean_prompt = re.sub(r"^(Okay, here's the prompt:|The image prompt is:|Sure, the prompt is:)\s*", "", clean_prompt, flags=re.IGNORECASE).strip()
+                logger.info(f"Extracted image prompt: '{clean_prompt}'")
+                return clean_prompt
+            else:
+                logger.info(f"LLM indicated no specific image prompt could be extracted from: '{text}'")
+                return None
+        except Exception as e:
+            logger.error(f"Error in LLM call during image prompt extraction: {e}", exc_info=True)
+            return None
 
     async def extract_news_topic_with_llm(self, text: str, lang_code: str, 
                                           system_prompt: str, user_prompt_template: Optional[str]) -> Optional[str]:
@@ -206,7 +287,7 @@ class IntentRecognizer:
         except Exception as e:
             logger.error(f"Error during LLM news topic extraction: {e}", exc_info=True)
 
-        if topic and topic.lower() != 'none' and topic.strip() != "":
+        if topic and topic.lower().strip() not in ["none", "null", "n/a", ""]:
             logger.info(f"LLM successfully extracted news topic: '{topic}'")
             return topic
         logger.info(f"LLM found no specific news topic in '{text}'.")

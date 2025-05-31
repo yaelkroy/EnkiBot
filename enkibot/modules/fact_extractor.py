@@ -1,4 +1,5 @@
-﻿# EnkiBot: Advanced Multilingual Telegram AI Assistant
+﻿# enkibot/modules/fact_extractor.py
+# EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify

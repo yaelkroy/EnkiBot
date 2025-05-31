@@ -1,3 +1,4 @@
+# enkibot/evolution/self_improvement_coordinator.py
 # EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
 #
