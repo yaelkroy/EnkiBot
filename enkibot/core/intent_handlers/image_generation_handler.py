@@ -14,18 +14,18 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-# enkibot/core/intent_handlers/image_generation_handler.py
-# (Your GPLv3 Header)
 
-import logging
-import base64 # For decoding b64_json
+import logging 
+import base64 
+import re
 from typing import Optional, TYPE_CHECKING
 
-from telegram import Update, InputFile
-from telegram.ext import ContextTypes
+from telegram import Update
+# InputFile might not be strictly necessary if only sending URLs or bytes for photos
+from telegram.ext import ContextTypes 
 from telegram.constants import ChatAction
 
-from enkibot import config 
+from enkibot import config # Import config directly
 
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
@@ -55,7 +55,7 @@ class ImageGenerationIntentHandler:
 
         extractor_prompts = self.language_service.get_llm_prompt_set("image_generation_prompt_extractor")
         clean_prompt: Optional[str] = None
-
+        
         if extractor_prompts and "system" in extractor_prompts and extractor_prompts.get("user_template"):
             clean_prompt = await self.intent_recognizer.extract_image_prompt_with_llm(
                 text=user_msg_txt,
@@ -63,7 +63,22 @@ class ImageGenerationIntentHandler:
                 system_prompt=extractor_prompts["system"],
                 user_prompt_template=extractor_prompts["user_template"]
             )
-        # ... (fallback prompt cleaning if needed, as in previous version) ...
+        else:
+            logger.error("Image generation prompt extractor prompts are missing or malformed (expecting 'user_template')!")
+            # Basic fallback prompt cleaning
+            bot_nicknames_to_check = config.BOT_NICKNAMES_TO_CHECK 
+            bot_name_pattern = r"(?i)\b(?:{})\b\s*[:,]?\s*".format("|".join(re.escape(name) for name in bot_nicknames_to_check))
+            cleaned_text_intermediate = re.sub(bot_name_pattern, "", user_msg_txt, count=1).strip()
+            triggers_to_remove = ["draw", "create", "generate", "image of", "picture of", "сделай картинку", "нарисуй", "создай", "сгенерируй", "картинку", "изображение"]
+            for trigger in triggers_to_remove:
+                cleaned_text_intermediate = re.sub(r'(?i)\b' + re.escape(trigger) + r'\b\s*', '', cleaned_text_intermediate, count=1).strip()
+            cleaned_text_intermediate = re.sub(r"^(can you|could you|please|i want|i need|дай мне|хочу)\s*", "", cleaned_text_intermediate, flags=re.IGNORECASE).strip()
+            cleaned_text_intermediate = re.sub(r"[?.!]$", "", cleaned_text_intermediate).strip()
+            if cleaned_text_intermediate and len(cleaned_text_intermediate) > 2: 
+                 clean_prompt = cleaned_text_intermediate
+            else:
+                 logger.warning("Fallback prompt cleaning also resulted in no usable prompt.")
+
 
         if not clean_prompt:
             await context.bot.edit_message_text(
@@ -74,44 +89,34 @@ class ImageGenerationIntentHandler:
             return
 
         try:
-            # Using the new method for Responses API
             generated_images_data = await self.llm_services.generate_image_with_dalle(
                 prompt=clean_prompt,
-                n=config.DEFAULT_IMAGE_N,          # Use 'config' directly
-                size=config.DEFAULT_IMAGE_SIZE,    # Use 'config' directly
-                quality=config.DEFAULT_IMAGE_QUALITY, # Use 'config' directly
-                response_format="url"
+                n=config.DEFAULT_IMAGE_N,        
+                size=config.DEFAULT_IMAGE_SIZE,  
+                quality=config.DEFAULT_IMAGE_QUALITY, 
+                response_format="url" 
             )
-
+            
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=preliminary_reply.message_id)
 
             if generated_images_data:
-                # Assuming the Responses API tool call generates one image at a time per tool definition
-                img_data = generated_images_data[0] # Get the first (and likely only) image data
-
-                if img_data.get("b64_json"):
-                    try:
+                caption_key = "image_generation_success_single" if len(generated_images_data) == 1 else "image_generation_success_multiple"
+                
+                for i, img_data in enumerate(generated_images_data):
+                    current_caption = self.language_service.get_response_string(caption_key, image_prompt=clean_prompt) if i == 0 else None
+                    if img_data.get("url"):
+                        logger.info(f"DALL-E API returned a URL. Sending photo to user.")
+                        await update.message.reply_photo(photo=img_data["url"], caption=current_caption)
+                    elif img_data.get("b64_json"): 
+                        logger.info("Image data returned as b64_json. Decoding and sending photo.")
                         image_bytes = base64.b64decode(img_data["b64_json"])
-                        # PTB's send_photo can take bytes directly for the photo argument
-                        await update.message.reply_photo(
-                            photo=image_bytes, 
-                            caption=self.language_service.get_response_string("image_generation_success_single", image_prompt=clean_prompt)
-                        )
-                        logger.info(f"Successfully sent image generated from b64_json for prompt '{clean_prompt}'.")
-                    except Exception as e:
-                        logger.error(f"Failed to decode/send image from b64_json: {e}", exc_info=True)
+                        await update.message.reply_photo(photo=image_bytes, caption=current_caption)
+                    else: 
+                        logger.error(f"Image generation successful but no URL or b64_json data found for prompt: {clean_prompt}")
                         await update.message.reply_text(self.language_service.get_response_string("image_generation_error"))
-                elif img_data.get("url"): # Should not happen with Responses API tool output example, but good to have a fallback
-                    logger.warning("Image generation via Responses API returned a URL, expected b64_json. Attempting to send URL.")
-                    await update.message.reply_photo(
-                        photo=img_data["url"],
-                        caption=self.language_service.get_response_string("image_generation_success_single", image_prompt=clean_prompt)
-                    )
-                else:
-                    logger.error(f"Image generation failed (no b64_json or url) for prompt: {clean_prompt}")
-                    await update.message.reply_text(self.language_service.get_response_string("image_generation_error"))
-            else:
-                logger.error(f"Image generation failed for prompt: {clean_prompt} (no data returned from service)")
+
+            else: 
+                logger.error(f"Image generation failed for prompt: {clean_prompt} (no data returned from service or service call failed)")
                 await update.message.reply_text(self.language_service.get_response_string("image_generation_error"))
 
         except Exception as e:
@@ -122,5 +127,6 @@ class ImageGenerationIntentHandler:
                     message_id=preliminary_reply.message_id,
                     text=self.language_service.get_response_string("image_generation_error")
                 )
-            except Exception: 
+            except Exception as edit_e: 
+                logger.error(f"Failed to edit preliminary message during image error handling: {edit_e}")
                 await update.message.reply_text(self.language_service.get_response_string("image_generation_error"))

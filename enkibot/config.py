@@ -42,7 +42,7 @@ DB_CONNECTION_STRING = (
 # --- LLM Provider API Keys & Models ---
 # OpenAI
 OPENAI_API_KEY = os.getenv('ENKI_BOT_OPENAI_API_KEY')
-OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4o-mini')                 # General purpose (if not overridden by task-specific models)
+OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4o')                 # General purpose (if not overridden by task-specific models)
 OPENAI_CLASSIFICATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_CLASSIFICATION_MODEL_ID', 'gpt-3.5-turbo') # For faster tasks like intent classification
 OPENAI_TRANSLATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_TRANSLATION_MODEL_ID', 'gpt-4o-mini')      # For language pack creation
 OPENAI_MULTIMODAL_IMAGE_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MULTIMODAL_IMAGE_MODEL_ID', 'gpt-4.1-mini')
