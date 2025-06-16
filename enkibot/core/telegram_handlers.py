@@ -161,6 +161,16 @@ class TelegramHandlerService:
         if not update.message or not update.message.text or not update.effective_chat or not update.effective_user: 
             return None 
         
+
+        # Define a regular expression that checks if the entire message is a URL.
+        # It looks for http:// or https:// at the start, followed by non-space characters until the end.
+        url_only_regex = re.compile(r"^https?:\/\/\S+$")
+
+        # Check the trimmed message text against the regex.
+        if url_only_regex.match(update.message.text.strip()):
+            logger.info("Message contains only a URL. Ignoring.")
+            return None  # Stop all further processing for this message
+
         await self.language_service.determine_language_context(
             update.message.text, 
             chat_id=update.effective_chat.id,
