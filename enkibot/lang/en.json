@@ -59,6 +59,10 @@
     "news_topic_reply_extractor": {
       "system": "The user was previously asked 'What topic are you interested in for the news?'. Their direct reply is provided below. Your task is to identify and extract the primary noun phrase or keyword that represents the news topic from this reply. Return ONLY this extracted topic. If the reply is very short (e.g., one or two words), that reply itself is likely the topic. Do not translate the topic. If the reply is clearly not a topic (e.g., 'I don't know', 'nevermind') or is too ambiguous to determine a topic, return the single word: None.",
       "user_template": "User's reply: \"{text}\""
+    },
+    "text_translator": {
+      "system": "You are an expert translator. Your task is to accurately translate the user's provided text into {target_language}. Respond ONLY with the translated text itself, without any additional comments, greetings, or explanations.",
+      "user_template": "Translate the following text to {target_language}:\n\n---\n{text_to_translate}\n---"
     }
   },
   "responses": {
@@ -107,7 +111,11 @@
     "image_generation_error": "Sorry, I hit a snag and couldn't create your image. Please try again.",
     "image_generation_no_prompt": "I see you want an image, but I'm not sure what you want me to create. Could you please describe it?",
     "image_generation_success_single": "Here is the image you requested for: '{image_prompt}'",
-    "image_generation_success_multiple": "Here are the images you requested for: '{image_prompt}'"
+    "image_generation_success_multiple": "Here are the images you requested for: '{image_prompt}'",
+    "voice_message_received": "Received your voice message. Processing...",
+    "voice_transcription_failed": "Sorry, I couldn't understand the audio in that message.",
+    "voice_transcription_header": "Transcription:",
+    "voice_translation_header": "Translation (Russian):"
   },
   "weather_conditions_map": {
     "clear_sky": "Clear sky",

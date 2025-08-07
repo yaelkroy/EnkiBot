@@ -1,23 +1,12 @@
-# enkibot/core/telegram_handlers.py
+﻿# enkibot/core/telegram_handlers.py
 # EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# (Your GPLv3 Header)
 
 import logging
 import asyncio
-import json 
+import os 
+import uuid 
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 
 from telegram import Update, ReplyKeyboardRemove
@@ -33,20 +22,16 @@ if TYPE_CHECKING:
     from enkibot.modules.profile_manager import ProfileManager
     from enkibot.modules.api_router import ApiRouter
     from enkibot.modules.response_generator import ResponseGenerator
-    # Import new handlers
     from .intent_handlers.weather_handler import WeatherIntentHandler
     from .intent_handlers.news_handler import NewsIntentHandler
     from .intent_handlers.general_handler import GeneralIntentHandler
     from .intent_handlers.image_generation_handler import ImageGenerationIntentHandler
 
-
 from enkibot import config as bot_config
-# Import specialized handlers
 from .intent_handlers.weather_handler import WeatherIntentHandler 
 from .intent_handlers.news_handler import NewsIntentHandler
 from .intent_handlers.general_handler import GeneralIntentHandler
 from .intent_handlers.image_generation_handler import ImageGenerationIntentHandler
-
 
 logger = logging.getLogger(__name__)
 
@@ -104,13 +89,12 @@ class TelegramHandlerService:
         self.image_generation_handler = ImageGenerationIntentHandler(
             language_service=self.language_service,
             intent_recognizer=self.intent_recognizer,
-            llm_services=self.llm_services 
+            llm_services=self.llm_services
         )
         logger.info("TelegramHandlerService __init__ COMPLETED")
 
     async def log_message_and_profile_tasks(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message or not update.message.text or not update.effective_user: 
-            logger.debug("log_message_and_profile_tasks: Skipping.")
             return
         chat_id = update.effective_chat.id
         user = update.effective_user
@@ -129,8 +113,6 @@ class TelegramHandlerService:
             asyncio.create_task(self.profile_manager.populate_name_variations_with_llm(
                 user_id=user.id, first_name=user.first_name, last_name=user.last_name, username=user.username,
                 system_prompt=name_var_prompts["system"], user_prompt_template=name_var_prompts.get("user","Generate for: {name_info}")))
-        elif action_taken and action_taken.lower() == "insert" and not name_var_prompts:
-             logger.warning("Could not generate name variations: name_variation_generator prompt missing.")
         profile_create_prompts = self.language_service.get_llm_prompt_set("profile_creator")
         profile_update_prompts = self.language_service.get_llm_prompt_set("profile_updater")
         if message.text and len(message.text.strip()) > 10:
@@ -157,20 +139,78 @@ class TelegramHandlerService:
         if is_group and final_trigger_decision: logger.info(f"_is_triggered: True (Group: {current_chat_id}): @M={is_at_mentioned}, NickM={is_nickname_mentioned}, Reply={is_reply_to_bot}")
         return final_trigger_decision
 
+    async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.voice:
+            return
+        
+        # --- ADDED THIS CHECK ---
+        # Ensure bot only processes voice in allowed groups or private chats
+        chat_id = update.effective_chat.id
+        is_group = update.message.chat.type in ['group', 'supergroup']
+        if is_group and self.allowed_group_ids and chat_id not in self.allowed_group_ids:
+            logger.debug(f"handle_voice_message: Skipping voice message from unallowed group {chat_id}.")
+            return
+        # --- END CHECK ---
+
+        # Set language context to Russian for the response, or detect from user's profile if available
+        # For this feature, we will default to Russian for the bot's replies.
+        self.language_service._set_current_language_internals('ru')
+        
+        await update.message.reply_text(self.language_service.get_response_string("voice_message_received"))
+        
+        voice_file = await update.message.voice.get_file()
+        
+        temp_dir = "temp_audio"
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_file_path = os.path.join(temp_dir, f"{uuid.uuid4()}.oga")
+        
+        try:
+            await voice_file.download_to_drive(temp_file_path)
+            
+            transcribed_text = await self.llm_services.transcribe_audio(temp_file_path)
+            
+            if not transcribed_text:
+                await update.message.reply_text(self.language_service.get_response_string("voice_transcription_failed"))
+                return
+            
+            transcription_header = self.language_service.get_response_string("voice_transcription_header")
+            await update.message.reply_text(f"*{transcription_header}*\n\n`{transcribed_text}`", parse_mode='MarkdownV2')
+            
+            is_russian = bool(re.search('[а-яА-Я]', transcribed_text))
+            
+            if not is_russian:
+                logger.info(f"Transcribed text is not Russian. Proceeding with translation.")
+                
+                translation_prompts = self.language_service.get_llm_prompt_set("text_translator")
+                
+                if translation_prompts and "system" in translation_prompts and "user_template" in translation_prompts:
+                    translated_text = await self.response_generator.translate_text(
+                        text_to_translate=transcribed_text,
+                        target_language="Russian",
+                        system_prompt=translation_prompts["system"],
+                        user_prompt_template=translation_prompts["user_template"]
+                    )
+                    
+                    if translated_text:
+                        translation_header = self.language_service.get_response_string("voice_translation_header")
+                        await update.message.reply_text(f"*{translation_header}*\n\n`{translated_text}`", parse_mode='MarkdownV2')
+                    else:
+                        logger.error("Translation failed for transcribed text.")
+                else:
+                    logger.error("Could not find 'text_translator' prompts in language pack.")
+
+        except Exception as e:
+            logger.error(f"Error processing voice message: {e}", exc_info=True)
+            await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
+        finally:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                logger.info(f"Cleaned up temporary audio file: {temp_file_path}")
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
         if not update.message or not update.message.text or not update.effective_chat or not update.effective_user: 
             return None 
         
-
-        # Define a regular expression that checks if the entire message is a URL.
-        # It looks for http:// or https:// at the start, followed by non-space characters until the end.
-        url_only_regex = re.compile(r"^https?:\/\/\S+$")
-
-        # Check the trimmed message text against the regex.
-        if url_only_regex.match(update.message.text.strip()):
-            logger.info("Message contains only a URL. Ignoring.")
-            return None  # Stop all further processing for this message
-
         await self.language_service.determine_language_context(
             update.message.text, 
             chat_id=update.effective_chat.id,
@@ -189,14 +229,13 @@ class TelegramHandlerService:
             self.pending_action_data.pop(chat_id, None) 
             context.user_data.pop('conversation_state', None)
             original_msg_id = pending_action_details.get("original_message_id")
-            # This now calls the refined handler method in WeatherIntentHandler
             return await self.weather_handler.handle_city_response(update, context, original_msg_id)
         elif current_conv_state == ASK_NEWS_TOPIC and pending_action_details and pending_action_details.get("action_type") == "ask_news_topic":
             self.pending_action_data.pop(chat_id, None) 
             context.user_data.pop('conversation_state', None)
             original_msg_id = pending_action_details.get("original_message_id")
-            # This now calls the refined handler method in NewsIntentHandler
             return await self.news_handler.handle_topic_response(update, context, original_msg_id)
+        
         user_msg_txt_lower = user_msg_txt.lower()
         if not await self._is_triggered(update, context, user_msg_txt_lower): 
             return None
@@ -204,7 +243,7 @@ class TelegramHandlerService:
         master_intent_prompts = self.language_service.get_llm_prompt_set("master_intent_classifier")
         master_intent = "UNKNOWN_INTENT"
         if master_intent_prompts and "system" in master_intent_prompts:
-            user_template_for_master = master_intent_prompts.get("user","{text_to_classify}")
+            user_template_for_master = master_intent_prompts.get("user_template","{text_to_classify}")
             master_intent = await self.intent_recognizer.classify_master_intent(
                 text=user_msg_txt, lang_code=self.language_service.current_lang,
                 system_prompt=master_intent_prompts["system"], user_prompt_template=user_template_for_master )
@@ -268,7 +307,7 @@ class TelegramHandlerService:
         
         analysis_result = await self.response_generator.analyze_replied_message(
             original_text=original_text, user_question=question_for_analysis,
-            system_prompt=analyzer_prompts["system"], user_prompt_template=analyzer_prompts.get("user") )
+            system_prompt=analyzer_prompts["system"], user_prompt_template=analyzer_prompts.get("user_template") )
         await update.message.reply_text(analysis_result)
         
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -328,5 +367,9 @@ class TelegramHandlerService:
             allow_reentry=True 
         )
         self.application.add_handler(conv_handler)
+
+        # Add the standalone handler for voice messages
+        self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
+        
         self.application.add_error_handler(self.error_handler)
         logger.info("TelegramHandlerService: All handlers registered.")

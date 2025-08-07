@@ -27,6 +27,7 @@ from enkibot.modules.profile_manager import ProfileManager
 from enkibot.modules.api_router import ApiRouter
 from enkibot.modules.response_generator import ResponseGenerator
 from enkibot.core.telegram_handlers import TelegramHandlerService
+from enkibot.modules.karma_manager import KarmaManager 
 
 logger = logging.getLogger(__name__)
 

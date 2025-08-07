@@ -1,4 +1,3 @@
-
 # enkibot/core/intent_handlers/news_handler.py
 # EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
@@ -32,8 +31,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # This state constant should ideally be defined in or imported from a central location
-# (e.g., telegram_handlers.py or a new enkibot.core.states module)
-# For now, ensure it matches the definition in telegram_handlers.py
+# to avoid magic numbers. For now, ensure it matches telegram_handlers.py.
 ASK_NEWS_TOPIC = 2 
 
 class NewsIntentHandler:
@@ -52,8 +50,7 @@ class NewsIntentHandler:
 
     async def _process_news_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE, topic: Optional[str], original_message_id: Optional[int] = None) -> int:
         """
-        Fetches news articles based on the topic (or general if topic is None),
-        compiles a summary using an LLM, and sends it to the user.
+        Fetches, compiles, and sends news. Central logic after topic is known.
         Returns ConversationHandler.END.
         """
         if not update.message or not update.effective_chat: 
@@ -68,7 +65,6 @@ class NewsIntentHandler:
             articles_structured = await self.api_router.get_latest_news_structured(
                 query=topic, 
                 lang_code=self.language_service.current_lang
-                # num parameter can be added if configurable, defaults to 5 in api_router
             )
 
             if articles_structured is None: # API call itself failed
@@ -173,7 +169,7 @@ class NewsIntentHandler:
         if not (extractor_prompts and "system" in extractor_prompts and extractor_prompts.get("user_template")):
             logger.error("NewsHandler: News topic reply extractor LLM prompts are missing or malformed (expecting 'user_template').")
             await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
-            return ConversationHandler.END # End conversation on prompt error
+            return ConversationHandler.END
 
         extracted_topic = await self.intent_recognizer.extract_topic_from_reply(
             text=user_reply_topic_text,
@@ -182,11 +178,9 @@ class NewsIntentHandler:
             user_prompt_template=extractor_prompts["user_template"] 
         )
 
-        if extracted_topic: 
-            if extracted_topic.lower() == "none": # If LLM explicitly says "None"
-                 logger.info(f"NewsHandler: LLM explicitly extracted 'None' as topic from reply '{user_reply_topic_text}'. Processing as general news.")
-                 return await self._process_news_request(update, context, None, original_message_id) # Treat as general
-            return await self._process_news_request(update, context, extracted_topic, original_message_id)
-        else: # intent_recognizer returned None (e.g., LLM call failed or returned empty after stripping "none")
-            logger.info(f"NewsHandler: LLM couldn't extract specific topic (returned None/empty) from reply '{user_reply_topic_text}'. Processing as general news.")
-            return await self._process_news_request(update, context, None, original_message_id)
+        # Use the extracted topic if successful, otherwise fall back to the user's raw input.
+        # This handles cases where the LLM might return "None" or fail, but the user's text is still a valid topic.
+        final_topic = extracted_topic or user_reply_topic_text
+        logger.info(f"NewsHandler: Final topic for processing: '{final_topic}'")
+        
+        return await self._process_news_request(update, context, final_topic, original_message_id)
