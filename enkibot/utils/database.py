@@ -64,9 +64,18 @@ class DatabaseManager:
             with conn.cursor() as cursor:
                 logger.debug(f"Executing query: {query[:150]}... with params: {params}")
                 cursor.execute(query, params) if params else cursor.execute(query)
-                if commit: conn.commit(); logger.debug("Query committed."); return True
-                if fetch_one: row = cursor.fetchone(); logger.debug(f"Query fetch_one: {row}"); return row
-                if fetch_all: rows = cursor.fetchall(); logger.debug(f"Query fetch_all count: {len(rows)}"); return rows
+                if commit:
+                    conn.commit()
+                    logger.debug("Query committed.")
+                    return True
+                if fetch_one:
+                    row = cursor.fetchone()
+                    logger.debug(f"Query fetch_one: {row}")
+                    return row
+                if fetch_all:
+                    rows = cursor.fetchall()
+                    logger.debug(f"Query fetch_all count: {len(rows)}")
+                    return rows
             return True
         except pyodbc.Error as ex:
             logger.error(f"DB query error on '{query[:100]}...': {ex}", exc_info=True)
@@ -77,7 +86,9 @@ class DatabaseManager:
             logger.error(f"Unexpected error query execution '{query[:100]}...': {e}", exc_info=True)
             return None if fetch_one or fetch_all else False
         finally:
-            if conn: conn.close(); logger.debug("DB connection closed post-exec.")
+             if conn:
+                conn.close()
+                logger.debug("DB connection closed post-exec.")
 
     async def get_recent_chat_texts(self, chat_id: int, limit: int = 3) -> List[str]:
         if not self.connection_string: return []
@@ -224,6 +235,9 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
                 if cursor.fetchone(): logger.info(f"{obj_type} '{obj_name_to_check}' already exists.")
                 else: logger.info(f"{obj_type} '{obj_name_to_check}' not found. Creating..."); cursor.execute(query); logger.info(f"{obj_type} '{obj_name_to_check}' created.")
             logger.info("Database initialization check complete.")
-    except Exception as e: logger.error(f"DB init error: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"DB init error: {e}", exc_info=True)
     finally:
-        if conn: conn.autocommit = False; conn.close()
+        if conn:
+            conn.autocommit = False
+            conn.close()
