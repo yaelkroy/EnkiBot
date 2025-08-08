@@ -187,11 +187,23 @@ class LLMServices:
             else:
                 logger.warning(f"DALL-E call successful but no image data returned.")
                 return None
-        except openai.APIError as e: 
+        except openai.APIError as e:
             logger.error(f"OpenAI DALL-E API Error: {e.message}", exc_info=False)
         except Exception as e:
             logger.error(f"Unexpected error during DALL-E image generation: {e}", exc_info=True)
         return None
+
+    async def generate_image_with_dalle(self, *args, **kwargs):
+        """Deprecated wrapper for backward compatibility.
+
+        Redirects calls from the old ``generate_image_with_dalle`` name to
+        :meth:`generate_image_openai` and logs a warning so that callers can
+        migrate to the new API.
+        """
+        logger.warning(
+            "generate_image_with_dalle is deprecated; use generate_image_openai instead."
+        )
+        return await self.generate_image_openai(*args, **kwargs)
 
     # --- NEW METHOD FOR TRANSCRIPTION ---
     async def transcribe_audio(self, audio_file_path: str) -> Optional[str]:
