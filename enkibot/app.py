@@ -16,6 +16,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import logging
+
 from telegram.ext import Application
 
 from enkibot import config
