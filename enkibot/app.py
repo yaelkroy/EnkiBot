@@ -63,6 +63,8 @@ class EnkiBotApplication:
             self.db_manager, 
             self.intent_recognizer
         )
+        # Initialize Karma manager
+        self.karma_manager = KarmaManager(self.db_manager)
 
         # Initialize Telegram handlers, passing all necessary services
         self.handler_service = TelegramHandlerService(
@@ -73,6 +75,7 @@ class EnkiBotApplication:
             profile_manager=self.profile_manager,
             api_router=self.api_router,
             response_generator=self.response_generator,
+            karma_manager=self.karma_manager,
             language_service=self.language_service,
             allowed_group_ids=config.ALLOWED_GROUP_IDS, # Pass as set
             bot_nicknames=config.BOT_NICKNAMES_TO_CHECK # Pass as list

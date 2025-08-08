@@ -4,6 +4,7 @@
 **Author:** Yael Demedetskaya
 **Contact:** yaelkroy@gmail.com
 **Project Status:** Actively Developed (as of May 30, 2025)
+**Version:** 5
 
 EnkiBot is an intelligent and adaptable Telegram assistant designed for rich, context-aware interactions. It leverages multiple Large Language Models (LLMs), maintains long-term memory, and features dynamic, evolving capabilities, including on-the-fly language pack generation.
 
@@ -31,11 +32,12 @@ EnkiBot is an intelligent and adaptable Telegram assistant designed for rich, co
 * **Built-in Functions**:
     * Current weather and multi-day forecasts via OpenWeatherMap, with localized descriptions.
     * Latest news (general or topic-specific) via NewsAPI, with support for language/country biasing.
+* **Karma System**: Allows users to award or deduct points with cooldowns and leaderboards.
 * **Modular & Extensible Architecture**: 
     * Designed with a clean, modular structure (application core, language service, Telegram handlers, individual functional modules) for better maintainability, testability, and scalability.
 * **Configurable**: Group access restrictions, API keys, and LLM model IDs are managed via environment variables for security and flexibility.
 * **Robust Error Handling**: Includes database logging for critical errors and user-friendly error messages.
-* **(Planned) Darwinian Self-Improvement**: The project includes a foundational structure and conceptual plan for future integration of self-rewriting code and evolutionary capabilities, inspired by concepts like the Darwin Gödel Machine, aiming for autonomous advancement of the bot's Python modules and LLM prompts.
+* **(Planned) Darwinian Self-Improvement**: The project includes a foundational structure and conceptual plan for future integration of self-rewriting code and evolutionary capabilities, inspired by concepts like the Darwin GÃ¶del Machine, aiming for autonomous advancement of the bot's Python modules and LLM prompts.
 
 ## Technology Stack
 

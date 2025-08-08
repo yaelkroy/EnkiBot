@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from enkibot.modules.profile_manager import ProfileManager
     from enkibot.modules.api_router import ApiRouter
     from enkibot.modules.response_generator import ResponseGenerator
+    from enkibot.modules.karma_manager import KarmaManager
     from .intent_handlers.weather_handler import WeatherIntentHandler
     from .intent_handlers.news_handler import NewsIntentHandler
     from .intent_handlers.general_handler import GeneralIntentHandler
@@ -48,6 +49,7 @@ class TelegramHandlerService:
                  profile_manager: 'ProfileManager',     
                  api_router: 'ApiRouter',             
                  response_generator: 'ResponseGenerator', 
+                 karma_manager: 'KarmaManager',
                  language_service: 'LanguageService',
                  allowed_group_ids: set, 
                  bot_nicknames: list
@@ -60,6 +62,7 @@ class TelegramHandlerService:
         self.profile_manager = profile_manager
         self.api_router = api_router
         self.response_generator = response_generator
+        self.karma_manager = karma_manager
         self.language_service = language_service
         
         self.allowed_group_ids = allowed_group_ids 
