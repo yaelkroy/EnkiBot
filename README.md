@@ -35,7 +35,7 @@ EnkiBot is an intelligent and adaptable Telegram assistant designed for rich, co
     * Designed with a clean, modular structure (application core, language service, Telegram handlers, individual functional modules) for better maintainability, testability, and scalability.
 * **Configurable**: Group access restrictions, API keys, and LLM model IDs are managed via environment variables for security and flexibility.
 * **Robust Error Handling**: Includes database logging for critical errors and user-friendly error messages.
-* **(Planned) Darwinian Self-Improvement**: The project includes a foundational structure and conceptual plan for future integration of self-rewriting code and evolutionary capabilities, inspired by concepts like the Darwin Gödel Machine, aiming for autonomous advancement of the bot's Python modules and LLM prompts.
+* **(Planned) Darwinian Self-Improvement**: The project includes a foundational structure and conceptual plan for future integration of self-rewriting code and evolutionary capabilities, inspired by concepts like the Darwin GÃ¶del Machine, aiming for autonomous advancement of the bot's Python modules and LLM prompts.
 
 ## Technology Stack
 
@@ -158,6 +158,14 @@ The project is organized into logical modules:
     python -m enkibot.main
     ```
     The bot will start, and logs will be written to `bot_activity.log` and the console.
+
+## Testing
+
+To run the project's test suite, execute:
+
+```bash
+pytest
+```
 
 ## How It Works
 
