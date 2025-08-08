@@ -15,5 +15,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # This directory holds the language packs (JSON files) for EnkiBot.
+# -------------------------------------------------------------------------------
+# Future Improvements:
+# - Improve modularity to support additional features and services.
+# - Enhance error handling and logging for better maintenance.
+# - Expand unit tests to cover more edge cases.
+# -------------------------------------------------------------------------------
 # Each file corresponds to a language code (e.g., 'en', 'ru') and contains
 # all user-facing strings and system prompts for that language.

@@ -1,3 +1,9 @@
+# -------------------------------------------------------------------------------
+# Future Improvements:
+# - Improve modularity to support additional features and services.
+# - Enhance error handling and logging for better maintenance.
+# - Expand unit tests to cover more edge cases.
+# -------------------------------------------------------------------------------
 # enkibot/modules/karma_manager.py
 # (Your GPLv3 Header)
 
