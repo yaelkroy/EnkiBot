@@ -89,12 +89,12 @@ class ImageGenerationIntentHandler:
             return
 
         try:
-            generated_images_data = await self.llm_services.generate_image_with_dalle(
+            generated_images_data = await self.llm_services.generate_image_openai(
                 prompt=clean_prompt,
-                n=config.DEFAULT_IMAGE_N,        
-                size=config.DEFAULT_IMAGE_SIZE,  
-                quality=config.DEFAULT_IMAGE_QUALITY, 
-                response_format="url" 
+                n=config.DEFAULT_IMAGE_N,
+                size=config.DEFAULT_IMAGE_SIZE,
+                quality=config.DEFAULT_IMAGE_QUALITY,
+                response_format="url"
             )
             
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=preliminary_reply.message_id)
