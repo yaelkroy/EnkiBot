@@ -1,3 +1,9 @@
+# -------------------------------------------------------------------------------
+# Future Improvements:
+# - Improve modularity to support additional features and services.
+# - Enhance error handling and logging for better maintenance.
+# - Expand unit tests to cover more edge cases.
+# -------------------------------------------------------------------------------
 ﻿# enkibot/core/telegram_handlers.py
 # EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>

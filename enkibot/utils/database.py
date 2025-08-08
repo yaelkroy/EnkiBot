@@ -16,6 +16,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # EnkiBot: Advanced Multilingual Telegram AI Assistant
+# -------------------------------------------------------------------------------
+# Future Improvements:
+# - Improve modularity to support additional features and services.
+# - Enhance error handling and logging for better maintenance.
+# - Expand unit tests to cover more edge cases.
+# -------------------------------------------------------------------------------
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
 # (Ensure your GPLv3 header is here)
 

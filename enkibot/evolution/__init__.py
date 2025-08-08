@@ -15,5 +15,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # This directory will contain all modules related to the bot's
+# -------------------------------------------------------------------------------
+# Future Improvements:
+# - Improve modularity to support additional features and services.
+# - Enhance error handling and logging for better maintenance.
+# - Expand unit tests to cover more edge cases.
+# -------------------------------------------------------------------------------
 # autonomous self-improvement and evolution capabilities, inspired by
-# the Darwin Gödel Machine (DGM) principles.
+# the Darwin Gdel Machine (DGM) principles.
