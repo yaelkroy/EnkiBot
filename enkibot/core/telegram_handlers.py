@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from enkibot.modules.profile_manager import ProfileManager
     from enkibot.modules.api_router import ApiRouter
     from enkibot.modules.response_generator import ResponseGenerator
+    from enkibot.modules.spam_detector import SpamDetector
     from .intent_handlers.weather_handler import WeatherIntentHandler
     from .intent_handlers.news_handler import NewsIntentHandler
     from .intent_handlers.general_handler import GeneralIntentHandler
@@ -50,6 +51,7 @@ from .intent_handlers.weather_handler import WeatherIntentHandler
 from .intent_handlers.news_handler import NewsIntentHandler
 from .intent_handlers.general_handler import GeneralIntentHandler
 from .intent_handlers.image_generation_handler import ImageGenerationIntentHandler
+from enkibot.modules.spam_detector import SpamDetector
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +64,13 @@ class TelegramHandlerService:
                  application: Application, 
                  db_manager: 'DatabaseManager', 
                  llm_services: 'LLMServices',   
-                 intent_recognizer: 'IntentRecognizer', 
-                 profile_manager: 'ProfileManager',     
-                 api_router: 'ApiRouter',             
-                 response_generator: 'ResponseGenerator', 
+                 intent_recognizer: 'IntentRecognizer',
+                 profile_manager: 'ProfileManager',
+                 api_router: 'ApiRouter',
+                 response_generator: 'ResponseGenerator',
                  language_service: 'LanguageService',
-                 allowed_group_ids: set, 
+                 spam_detector: 'SpamDetector',
+                 allowed_group_ids: set,
                  bot_nicknames: list
                 ):
         logger.info("TelegramHandlerService __init__ STARTING")
@@ -79,9 +82,10 @@ class TelegramHandlerService:
         self.api_router = api_router
         self.response_generator = response_generator
         self.language_service = language_service
+        self.spam_detector = spam_detector
         
         self.allowed_group_ids = allowed_group_ids 
-        self.bot_nicknames = bot_nicknames 
+        self.bot_nicknames = bot_nicknames
         
         self.pending_action_data: Dict[int, Dict[str, Any]] = {}
 
@@ -244,18 +248,20 @@ class TelegramHandlerService:
         pending_action_details = self.pending_action_data.get(chat_id)
 
         if current_conv_state == ASK_CITY and pending_action_details and pending_action_details.get("action_type") == "ask_city_weather":
-            self.pending_action_data.pop(chat_id, None) 
+            self.pending_action_data.pop(chat_id, None)
             context.user_data.pop('conversation_state', None)
             original_msg_id = pending_action_details.get("original_message_id")
             return await self.weather_handler.handle_city_response(update, context, original_msg_id)
         elif current_conv_state == ASK_NEWS_TOPIC and pending_action_details and pending_action_details.get("action_type") == "ask_news_topic":
-            self.pending_action_data.pop(chat_id, None) 
+            self.pending_action_data.pop(chat_id, None)
             context.user_data.pop('conversation_state', None)
             original_msg_id = pending_action_details.get("original_message_id")
             return await self.news_handler.handle_topic_response(update, context, original_msg_id)
-        
+
         user_msg_txt_lower = user_msg_txt.lower()
-        if not await self._is_triggered(update, context, user_msg_txt_lower): 
+        if await self.spam_detector.inspect_message(update, context):
+            return ConversationHandler.END
+        if not await self._is_triggered(update, context, user_msg_txt_lower):
             return None
 
         master_intent_prompts = self.language_service.get_llm_prompt_set("master_intent_classifier")

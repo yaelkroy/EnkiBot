@@ -35,6 +35,9 @@ TELEGRAM_BOT_TOKEN = os.getenv('ENKI_BOT_TOKEN')
 # A list of bot nicknames that trigger a response in group chats.
 BOT_NICKNAMES_TO_CHECK = ["enki", "enkibot", "энки", "энкибот", "бот", "bot"]
 
+# Feature toggles
+ENABLE_SPAM_DETECTION = os.getenv('ENKI_BOT_ENABLE_SPAM_DETECTION', 'true').lower() == 'true'
+
 # Timeout settings for Telegram HTTP requests (in seconds).
 TELEGRAM_CONNECT_TIMEOUT = float(os.getenv('ENKI_BOT_TELEGRAM_CONNECT_TIMEOUT', '30'))
 TELEGRAM_READ_TIMEOUT = float(os.getenv('ENKI_BOT_TELEGRAM_READ_TIMEOUT', '30'))
