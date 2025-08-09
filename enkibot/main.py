@@ -65,6 +65,8 @@ def main() -> None:
                 timeout=httpx.Timeout(
                     connect=config.TELEGRAM_CONNECT_TIMEOUT,
                     read=config.TELEGRAM_READ_TIMEOUT,
+                    write=config.TELEGRAM_WRITE_TIMEOUT,
+                    pool=config.TELEGRAM_POOL_TIMEOUT,
                 )
             )
         )

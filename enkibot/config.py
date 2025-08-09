@@ -38,6 +38,18 @@ BOT_NICKNAMES_TO_CHECK = ["enki", "enkibot", "энки", "энкибот", "бо
 # Timeout settings for Telegram HTTP requests (in seconds).
 TELEGRAM_CONNECT_TIMEOUT = float(os.getenv('ENKI_BOT_TELEGRAM_CONNECT_TIMEOUT', '30'))
 TELEGRAM_READ_TIMEOUT = float(os.getenv('ENKI_BOT_TELEGRAM_READ_TIMEOUT', '30'))
+# The write timeout is rarely distinct from the read timeout, but httpx
+# requires it to be provided when specifying individual timeouts. Use the
+# read timeout as the default if no explicit environment variable is set.
+TELEGRAM_WRITE_TIMEOUT = float(
+    os.getenv('ENKI_BOT_TELEGRAM_WRITE_TIMEOUT', str(TELEGRAM_READ_TIMEOUT))
+)
+# httpx also expects a pool timeout when customising timeouts. Default to the
+# connect timeout so existing behaviour is preserved without requiring an
+# additional setting from the user.
+TELEGRAM_POOL_TIMEOUT = float(
+    os.getenv('ENKI_BOT_TELEGRAM_POOL_TIMEOUT', str(TELEGRAM_CONNECT_TIMEOUT))
+)
 
 # --- Database Configuration (MS SQL Server) ---
 SQL_SERVER_NAME = os.getenv('ENKI_BOT_SQL_SERVER_NAME')
