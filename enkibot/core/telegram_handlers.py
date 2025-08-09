@@ -722,7 +722,7 @@ class TelegramHandlerService:
         if stats['top_users']:
             lines.append("Top users:")
             for u in stats['top_users']:
-                name = f"@{u['username']}" if u.get('username') else str(u['user_id'])
+                name = f"@{u['username']}" if u.get('username') else f"@{u['user_id']}"
                 lines.append(f"- {name}: {u['count']}")
         if stats['top_links']:
             lines.append("Top links:")
