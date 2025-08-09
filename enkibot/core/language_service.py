@@ -303,7 +303,15 @@ class LanguageService:
                  logger.warning(f"LLM detected lang '{llm_detected_primary_lang}' but confidence ({llm_detected_confidence:.2f}) "
                                f"< threshold ({LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD}). Using current/default: {final_candidate_lang_code}")
             # If no LLM detection or low confidence, final_candidate_lang_code remains as initialized (current or default)
-        
+
+        unsupported_codes = ("", "und", "undefined", "none")
+        if final_candidate_lang_code in unsupported_codes:
+            logger.warning(
+                f"LLM returned unsupported language code '{final_candidate_lang_code}'. "
+                f"Using default language '{self.default_language}' instead."
+            )
+            final_candidate_lang_code = self.default_language
+
         # Set language context based on final_candidate_lang_code
         if final_candidate_lang_code not in self.language_packs:
             logger.warning(f"Language pack for candidate '{final_candidate_lang_code}' not found. Attempting creation.")
