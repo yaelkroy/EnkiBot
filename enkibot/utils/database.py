@@ -267,6 +267,60 @@ class DatabaseManager:
             commit=True,
         )
 
+    async def add_warning(self, chat_id: int, user_id: int, reason: Optional[str] = None) -> int:
+        """Increment warning count for a user and return new count."""
+        if not self.connection_string:
+            return 0
+        conn = self.get_db_connection()
+        if not conn:
+            return 0
+        sql = (
+            "MERGE UserWarnings AS t USING (VALUES(?,?,?)) AS s(ChatID,UserID,Reason) "
+            "ON t.ChatID=s.ChatID AND t.UserID=s.UserID "
+            "WHEN MATCHED THEN UPDATE SET WarnCount=ISNULL(t.WarnCount,0)+1, LastReason=s.Reason, LastWarned=GETDATE() "
+            "WHEN NOT MATCHED THEN INSERT (ChatID,UserID,WarnCount,LastReason,LastWarned) "
+            "VALUES (s.ChatID,s.UserID,1,s.Reason,GETDATE()) OUTPUT inserted.WarnCount;"
+        )
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (chat_id, user_id, reason))
+                row = cursor.fetchone()
+            conn.commit()
+            return row.WarnCount if row and hasattr(row, 'WarnCount') else 0
+        except pyodbc.Error as ex:
+            logger.error(f"DB error adding warning: {ex}", exc_info=True)
+            try:
+                conn.rollback()
+            except pyodbc.Error:
+                pass
+            return 0
+        finally:
+            if conn:
+                conn.close()
+
+    async def get_warning_count(self, chat_id: int, user_id: int) -> int:
+        row = await self.execute_query(
+            "SELECT WarnCount FROM UserWarnings WHERE ChatID = ? AND UserID = ?",
+            (chat_id, user_id),
+            fetch_one=True,
+        )
+        return row.WarnCount if row and hasattr(row, 'WarnCount') else 0
+
+    async def clear_warnings(self, chat_id: int, user_id: int):
+        await self.execute_query(
+            "DELETE FROM UserWarnings WHERE ChatID = ? AND UserID = ?",
+            (chat_id, user_id),
+            commit=True,
+        )
+
+    async def list_warnings(self, chat_id: int):
+        rows = await self.execute_query(
+            "SELECT UserID, WarnCount FROM UserWarnings WHERE ChatID = ?",
+            (chat_id,),
+            fetch_all=True,
+        )
+        return [(r.UserID, r.WarnCount) for r in rows] if rows else []
+
 def initialize_database(): # This function defines and uses DatabaseManager locally
     if not config.DB_CONNECTION_STRING:
         logger.warning("Cannot initialize database: Connection string not configured.")

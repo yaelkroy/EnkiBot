@@ -23,11 +23,12 @@
 
 import logging
 import asyncio
-import os 
-import uuid 
+import os
+import uuid
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 
-from telegram import Update, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardRemove, ChatPermissions
 from telegram.ext import Application, ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 from telegram.constants import ChatAction
 import re 
@@ -160,6 +161,13 @@ class TelegramHandlerService:
         final_trigger_decision = is_bot_mentioned or is_reply_to_bot
         if is_group and final_trigger_decision: logger.info(f"_is_triggered: True (Group: {current_chat_id}): @M={is_at_mentioned}, NickM={is_nickname_mentioned}, Reply={is_reply_to_bot}")
         return final_trigger_decision
+
+    async def _is_user_admin(self, chat_id: int, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        try:
+            member = await context.bot.get_chat_member(chat_id, user_id)
+            return member.status in ("administrator", "creator")
+        except Exception:
+            return False
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.message.voice:
@@ -420,6 +428,154 @@ class TelegramHandlerService:
         else:
             await update.message.reply_text(f"Spam vote recorded ({count}/{threshold}).")
 
+    async def ban_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a user's message to ban them.")
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        target = update.message.reply_to_message.from_user
+        try:
+            await context.bot.ban_chat_member(chat_id, target.id)
+            await update.message.reply_html(
+                f"User {target.mention_html()} has been banned by {update.effective_user.mention_html()}.")
+        except Exception as e:
+            logger.error(f"Failed to ban user {target.id}: {e}")
+            await update.message.reply_text("Failed to ban user.")
+
+    async def unban_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a user's message to unban them.")
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        target = update.message.reply_to_message.from_user
+        try:
+            await context.bot.unban_chat_member(chat_id, target.id)
+            await update.message.reply_html(
+                f"User {target.mention_html()} has been unbanned by {update.effective_user.mention_html()}.")
+        except Exception as e:
+            logger.error(f"Failed to unban user {target.id}: {e}")
+            await update.message.reply_text("Failed to unban user.")
+
+    async def kick_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a user's message to kick them.")
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        target = update.message.reply_to_message.from_user
+        try:
+            await context.bot.ban_chat_member(chat_id, target.id)
+            await context.bot.unban_chat_member(chat_id, target.id)
+            await update.message.reply_html(
+                f"User {target.mention_html()} has been kicked by {update.effective_user.mention_html()}.")
+        except Exception as e:
+            logger.error(f"Failed to kick user {target.id}: {e}")
+            await update.message.reply_text("Failed to kick user.")
+
+    async def mute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a user's message to mute them.")
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        target = update.message.reply_to_message.from_user
+        duration = 10
+        if context.args and context.args[0].isdigit():
+            duration = int(context.args[0])
+        until_date = datetime.utcnow() + timedelta(minutes=duration)
+        perms = ChatPermissions(can_send_messages=False, can_send_media_messages=False,
+                                can_send_polls=False, can_send_other_messages=False,
+                                can_add_web_page_previews=False)
+        try:
+            await context.bot.restrict_chat_member(chat_id, target.id, permissions=perms, until_date=until_date)
+            await update.message.reply_html(
+                f"User {target.mention_html()} has been muted for {duration} minutes.")
+        except Exception as e:
+            logger.error(f"Failed to mute user {target.id}: {e}")
+            await update.message.reply_text("Failed to mute user.")
+
+    async def unmute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a user's message to unmute them.")
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        target = update.message.reply_to_message.from_user
+        perms = ChatPermissions(can_send_messages=True, can_send_media_messages=True,
+                                can_send_polls=True, can_send_other_messages=True,
+                                can_add_web_page_previews=True)
+        try:
+            await context.bot.restrict_chat_member(chat_id, target.id, permissions=perms)
+            await update.message.reply_html(
+                f"User {target.mention_html()} has been unmuted.")
+        except Exception as e:
+            logger.error(f"Failed to unmute user {target.id}: {e}")
+            await update.message.reply_text("Failed to unmute user.")
+
+    async def warn_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a user's message to warn them.")
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        target = update.message.reply_to_message.from_user
+        reason = " ".join(context.args) if context.args else None
+        count = await self.db_manager.add_warning(chat_id, target.id, reason)
+        await update.message.reply_html(
+            f"\u26A0\uFE0F {target.mention_html()} has been warned (Warn #{count}).")
+        if count >= 3:
+            try:
+                await context.bot.ban_chat_member(chat_id, target.id)
+                await update.message.reply_html(
+                    f"User {target.mention_html()} was banned after reaching 3 warnings.")
+            except Exception as e:
+                logger.error(f"Auto-ban after warnings failed for user {target.id}: {e}")
+
+    async def warns_list_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message:
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        if update.message.reply_to_message:
+            target = update.message.reply_to_message.from_user
+            count = await self.db_manager.get_warning_count(chat_id, target.id)
+            await update.message.reply_text(f"User {target.id} has {count} warning(s).")
+            return
+        rows = await self.db_manager.list_warnings(chat_id)
+        if not rows:
+            await update.message.reply_text("No warnings recorded.")
+            return
+        lines = [f"{user_id}: {warns}" for user_id, warns in rows]
+        await update.message.reply_text("Warnings:\n" + "\n".join(lines))
+
+    async def remove_warn_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a user's message to clear their warnings.")
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        target = update.message.reply_to_message.from_user
+        await self.db_manager.clear_warnings(chat_id, target.id)
+        await update.message.reply_text(f"Warnings cleared for user {target.id}.")
+
     async def set_spam_threshold_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.effective_user:
             return
@@ -467,6 +623,14 @@ class TelegramHandlerService:
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("report", self.report_command))
         self.application.add_handler(CommandHandler(["spam", "voteban"], self.spam_vote_command))
+        self.application.add_handler(CommandHandler("ban", self.ban_command))
+        self.application.add_handler(CommandHandler(["unban", "pardon"], self.unban_command))
+        self.application.add_handler(CommandHandler("kick", self.kick_command))
+        self.application.add_handler(CommandHandler("mute", self.mute_command))
+        self.application.add_handler(CommandHandler("unmute", self.unmute_command))
+        self.application.add_handler(CommandHandler("warn", self.warn_command))
+        self.application.add_handler(CommandHandler("warns_list", self.warns_list_command))
+        self.application.add_handler(CommandHandler(["rm_warn", "clear_warn"], self.remove_warn_command))
         self.application.add_handler(CommandHandler("setspamthreshold", self.set_spam_threshold_command))
         
         conv_handler = ConversationHandler(
