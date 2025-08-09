@@ -344,11 +344,99 @@ class TelegramHandlerService:
         self.language_service._set_current_language_internals(bot_config.DEFAULT_LANGUAGE)
         await update.message.reply_text(self.language_service.get_response_string("help"))
 
-    async def news_command_entry(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]: 
+    async def news_command_entry(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
         if not update.message or not update.effective_user: return ConversationHandler.END
         self.language_service._set_current_language_internals(bot_config.DEFAULT_LANGUAGE)
         context.user_data['conversation_state'] = ASK_NEWS_TOPIC
         return await self.news_handler.handle_command_entry(update, context)
+
+    async def report_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a message with /report to alert admins.")
+            return
+        reported = update.message.reply_to_message
+        chat_id = update.effective_chat.id
+        report_text = f"\U0001F6A8 Reported message by @{reported.from_user.username or reported.from_user.id}:"  # 🚨
+        if reported.text:
+            report_text += f"\n{reported.text}"
+        try:
+            if bot_config.REPORTS_CHANNEL_ID:
+                await context.bot.forward_message(bot_config.REPORTS_CHANNEL_ID, chat_id, reported.message_id)
+                await context.bot.send_message(bot_config.REPORTS_CHANNEL_ID, report_text)
+            else:
+                admins = await context.bot.get_chat_administrators(chat_id)
+                for admin in admins:
+                    if not admin.user.is_bot:
+                        try:
+                            await context.bot.send_message(admin.user.id, report_text)
+                        except Exception as e:
+                            logger.error(f"Failed to notify admin {admin.user.id}: {e}")
+            await update.message.reply_text("Thanks, the admins have been notified.")
+        except Exception as e:
+            logger.error(f"Error handling report command: {e}", exc_info=True)
+
+    async def spam_vote_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a message with /spam to vote for banning the sender.")
+            return
+        chat_id = update.effective_chat.id
+        reporter_id = update.effective_user.id if update.effective_user else None
+        if reporter_id is None:
+            return
+        try:
+            member = await context.bot.get_chat_member(chat_id, reporter_id)
+            if member.status in ("administrator", "creator"):
+                await update.message.reply_text("Admins can ban users directly without voting.")
+                return
+        except Exception:
+            pass
+        target_user = update.message.reply_to_message.from_user
+        try:
+            target_member = await context.bot.get_chat_member(chat_id, target_user.id)
+            if target_member.status in ("administrator", "creator"):
+                await update.message.reply_text("Cannot vote to ban an admin.")
+                return
+        except Exception:
+            pass
+        added = await self.db_manager.add_spam_vote(chat_id, target_user.id, reporter_id)
+        if not added:
+            await update.message.reply_text("You have already voted to ban this user.")
+            return
+        threshold = await self.db_manager.get_spam_vote_threshold(chat_id, bot_config.DEFAULT_SPAM_VOTE_THRESHOLD)
+        count = await self.db_manager.count_spam_votes(chat_id, target_user.id, bot_config.SPAM_VOTE_TIME_WINDOW_MINUTES)
+        if count >= threshold:
+            try:
+                await context.bot.ban_chat_member(chat_id, target_user.id)
+                await update.message.reply_html(
+                    f"User {target_user.mention_html()} was banned by community vote for spam."
+                )
+                try:
+                    await context.bot.delete_message(chat_id, update.message.reply_to_message.message_id)
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.error(f"Failed to ban user {target_user.id}: {e}")
+            await self.db_manager.clear_spam_votes(chat_id, target_user.id)
+        else:
+            await update.message.reply_text(f"Spam vote recorded ({count}/{threshold}).")
+
+    async def set_spam_threshold_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.effective_user:
+            return
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        try:
+            member = await context.bot.get_chat_member(chat_id, user_id)
+            if member.status not in ("administrator", "creator"):
+                return
+        except Exception:
+            return
+        if not context.args or not context.args[0].isdigit():
+            await update.message.reply_text("Usage: /setspamthreshold <number>")
+            return
+        threshold = int(context.args[0])
+        await self.db_manager.set_spam_vote_threshold(chat_id, threshold)
+        await update.message.reply_text(f"Spam vote threshold set to {threshold}.")
 
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f'Update "{update}" caused error "{context.error}"', exc_info=True)
@@ -377,6 +465,9 @@ class TelegramHandlerService:
     def register_all_handlers(self): 
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler("report", self.report_command))
+        self.application.add_handler(CommandHandler(["spam", "voteban"], self.spam_vote_command))
+        self.application.add_handler(CommandHandler("setspamthreshold", self.set_spam_threshold_command))
         
         conv_handler = ConversationHandler(
             entry_points=[

@@ -196,6 +196,77 @@ class DatabaseManager:
         rows = await self.execute_query(query, (limit, user_id, chat_id), fetch_all=True)
         return [row.MessageText for row in rows] if rows else []
 
+    async def add_spam_vote(self, chat_id: int, target_user_id: int, reporter_user_id: int) -> bool:
+        """Records a spam vote if one doesn't already exist for this reporter/target pair."""
+        if not self.connection_string:
+            return False
+        conn = self.get_db_connection()
+        if not conn:
+            return False
+        sql = (
+            "MERGE SpamReports AS t USING (VALUES(?,?,?)) AS s(ChatID,TargetUserID,ReporterUserID) "
+            "ON t.ChatID=s.ChatID AND t.TargetUserID=s.TargetUserID AND t.ReporterUserID=s.ReporterUserID "
+            "WHEN NOT MATCHED THEN INSERT (ChatID,TargetUserID,ReporterUserID,Timestamp) "
+            "VALUES(s.ChatID,s.TargetUserID,s.ReporterUserID,GETDATE()) OUTPUT $action;"
+        )
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (chat_id, target_user_id, reporter_user_id))
+                row = cursor.fetchone()
+            conn.commit()
+            return bool(row and row.Action == 'INSERT')
+        except pyodbc.Error as ex:
+            logger.error(f"DB error adding spam vote: {ex}", exc_info=True)
+            try:
+                conn.rollback()
+            except pyodbc.Error:
+                pass
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    async def count_spam_votes(self, chat_id: int, target_user_id: int, window_minutes: int) -> int:
+        """Returns the number of unique reporters within the given timeframe."""
+        query = (
+            "SELECT COUNT(DISTINCT ReporterUserID) AS VoteCount FROM SpamReports "
+            "WHERE ChatID = ? AND TargetUserID = ? AND Timestamp > DATEADD(MINUTE, ?, GETDATE())"
+        )
+        row = await self.execute_query(query, (chat_id, target_user_id, -abs(window_minutes)), fetch_one=True)
+        return row.VoteCount if row and hasattr(row, 'VoteCount') else 0
+
+    async def clear_spam_votes(self, chat_id: int, target_user_id: int):
+        await self.execute_query(
+            "DELETE FROM SpamReports WHERE ChatID = ? AND TargetUserID = ?",
+            (chat_id, target_user_id),
+            commit=True,
+        )
+
+    async def get_spam_vote_threshold(self, chat_id: int, default_threshold: int) -> int:
+        row = await self.execute_query(
+            "SELECT SpamVoteThreshold FROM ChatSettings WHERE ChatID = ?",
+            (chat_id,),
+            fetch_one=True,
+        )
+        if row and hasattr(row, 'SpamVoteThreshold') and row.SpamVoteThreshold:
+            return row.SpamVoteThreshold
+        await self.execute_query(
+            "INSERT INTO ChatSettings (ChatID, SpamVoteThreshold) VALUES (?, ?)",
+            (chat_id, default_threshold),
+            commit=True,
+        )
+        return default_threshold
+
+    async def set_spam_vote_threshold(self, chat_id: int, threshold: int):
+        await self.execute_query(
+            "MERGE ChatSettings AS t USING (VALUES(?,?)) AS s(ChatID,SpamVoteThreshold) "
+            "ON t.ChatID=s.ChatID "
+            "WHEN MATCHED THEN UPDATE SET SpamVoteThreshold=s.SpamVoteThreshold "
+            "WHEN NOT MATCHED THEN INSERT (ChatID,SpamVoteThreshold) VALUES (s.ChatID,s.SpamVoteThreshold);",
+            (chat_id, threshold),
+            commit=True,
+        )
+
 def initialize_database(): # This function defines and uses DatabaseManager locally
     if not config.DB_CONNECTION_STRING:
         logger.warning("Cannot initialize database: Connection string not configured.")
@@ -219,6 +290,9 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "IX_ChatLog_UserID": "CREATE INDEX IX_ChatLog_UserID ON ChatLog (UserID);",
         "ErrorLog": "CREATE TABLE ErrorLog (ErrorID INT IDENTITY(1,1) PRIMARY KEY, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, LogLevel NVARCHAR(50) NOT NULL, LoggerName NVARCHAR(255) NULL, ModuleName NVARCHAR(255) NULL, FunctionName NVARCHAR(255) NULL, LineNumber INT NULL, ErrorMessage NVARCHAR(MAX) NOT NULL, ExceptionInfo NVARCHAR(MAX) NULL);",
         "IX_ErrorLog_Timestamp": "CREATE INDEX IX_ErrorLog_Timestamp ON ErrorLog (Timestamp DESC);",
+        "ChatSettings": "CREATE TABLE ChatSettings (ChatID BIGINT PRIMARY KEY, SpamVoteThreshold INT NOT NULL DEFAULT 3);",
+        "SpamReports": "CREATE TABLE SpamReports (ReportID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, TargetUserID BIGINT NOT NULL, ReporterUserID BIGINT NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, CONSTRAINT UQ_SpamReports UNIQUE (ChatID, TargetUserID, ReporterUserID));",
+        "IX_SpamReports_Chat_Target": "CREATE INDEX IX_SpamReports_Chat_Target ON SpamReports (ChatID, TargetUserID);",
     }
     try:
         with conn.cursor() as cursor:
