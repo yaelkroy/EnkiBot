@@ -25,8 +25,10 @@ import os
 import logging
 import asyncio
 from typing import Optional 
-from telegram import Update 
-from telegram.ext import Application 
+from telegram import Update
+from telegram.ext import Application
+from telegram.request import HTTPXRequest
+import httpx
 
 from enkibot import config
 from enkibot.utils.logging_config import setup_logging
@@ -58,7 +60,15 @@ def main() -> None:
 
     try:
         logger.info("Initializing Telegram PTB Application...")
-        ptb_app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+        request = HTTPXRequest(
+            httpx.AsyncClient(
+                timeout=httpx.Timeout(
+                    config.TELEGRAM_CONNECT_TIMEOUT,
+                    read=config.TELEGRAM_READ_TIMEOUT,
+                )
+            )
+        )
+        ptb_app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).request(request).build()
         
         logger.info("Initializing EnkiBotApplication...")
         # --- MODIFIED BOT INSTANTIATION ---
