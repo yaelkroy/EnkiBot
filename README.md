@@ -9,7 +9,7 @@ EnkiBot is an intelligent and adaptable Telegram assistant designed for rich, co
 
 ## Key Features
 
-* **Multilingual Support**: 
+* **Multilingual Support**:
     * Automatically detects message language using a combination of the current message and recent chat history for improved accuracy.
     * Responds in the detected language.
     * Can attempt to generate new language packs via LLM translation if an unsupported language is detected with high confidence.
@@ -33,6 +33,8 @@ EnkiBot is an intelligent and adaptable Telegram assistant designed for rich, co
     * Latest news (general or topic-specific) via NewsAPI, with support for language/country biasing.
 * **Modular & Extensible Architecture**:
     * Designed with a clean, modular structure (application core, language service, Telegram handlers, individual functional modules) for better maintainability, testability, and scalability.
+* **Natural Language Trigger**:
+    * Start a message with "Hey, Enki!" to ask questions or say "Hey, Enki! Draw ..." to generate images on demand.
 * **Configurable**: Group access restrictions, API keys, and LLM model IDs are managed via environment variables for security and flexibility.
 * **Robust Error Handling**: Includes database logging for critical errors and user-friendly error messages.
 * **(Planned) Darwinian Self-Improvement**: The project includes a foundational structure and conceptual plan for future integration of self-rewriting code and evolutionary capabilities, inspired by concepts like the Darwin Gödel Machine, aiming for autonomous advancement of the bot's Python modules and LLM prompts.
