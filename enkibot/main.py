@@ -61,9 +61,9 @@ def main() -> None:
     try:
         logger.info("Initializing Telegram PTB Application...")
         request = HTTPXRequest(
-            httpx.AsyncClient(
+            client=httpx.AsyncClient(
                 timeout=httpx.Timeout(
-                    config.TELEGRAM_CONNECT_TIMEOUT,
+                    connect=config.TELEGRAM_CONNECT_TIMEOUT,
                     read=config.TELEGRAM_READ_TIMEOUT,
                 )
             )
