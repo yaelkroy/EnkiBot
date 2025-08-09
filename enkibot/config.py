@@ -35,6 +35,10 @@ TELEGRAM_BOT_TOKEN = os.getenv('ENKI_BOT_TOKEN')
 # A list of bot nicknames that trigger a response in group chats.
 BOT_NICKNAMES_TO_CHECK = ["enki", "enkibot", "энки", "энкибот", "бот", "bot"]
 
+# Timeout settings for Telegram HTTP requests (in seconds).
+TELEGRAM_CONNECT_TIMEOUT = float(os.getenv('ENKI_BOT_TELEGRAM_CONNECT_TIMEOUT', '30'))
+TELEGRAM_READ_TIMEOUT = float(os.getenv('ENKI_BOT_TELEGRAM_READ_TIMEOUT', '30'))
+
 # --- Database Configuration (MS SQL Server) ---
 SQL_SERVER_NAME = os.getenv('ENKI_BOT_SQL_SERVER_NAME')
 SQL_DATABASE_NAME = os.getenv('ENKI_BOT_SQL_DATABASE_NAME')
