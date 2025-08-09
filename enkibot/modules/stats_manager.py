@@ -43,12 +43,21 @@ class StatsManager:
                 "total_messages": 0,
                 "joins": 0,
                 "leaves": 0,
-                "users": defaultdict(lambda: {"count": 0, "first_seen": None, "last_active": None}),
+                "users": defaultdict(
+                    lambda: {
+                        "count": 0,
+                        "first_seen": None,
+                        "last_active": None,
+                        "username": None,
+                    }
+                ),
                 "links": defaultdict(int),
             }
         )
 
-    async def log_message(self, chat_id: int, user_id: int, message_text: Optional[str]):
+    async def log_message(
+        self, chat_id: int, user_id: int, message_text: Optional[str], username: Optional[str] = None
+    ):
         """Increment counters for a new message."""
         if self.db_manager.connection_string:
             await self.db_manager.execute_query(
@@ -102,13 +111,17 @@ class StatsManager:
         user_stats["count"] += 1
         now = datetime.utcnow()
         user_stats["last_active"] = now
+        if username:
+            user_stats["username"] = username
         if not user_stats["first_seen"]:
             user_stats["first_seen"] = now
         if message_text:
             for domain in self._extract_domains(message_text):
                 stats["links"][domain] += 1
 
-    async def log_member_join(self, chat_id: int, user_id: int):
+    async def log_member_join(
+        self, chat_id: int, user_id: int, username: Optional[str] = None
+    ):
         if self.db_manager.connection_string:
             await self.db_manager.execute_query(
                 """
@@ -135,6 +148,8 @@ class StatsManager:
         stats["joins"] += 1
         user_stats = stats["users"][user_id]
         now = datetime.utcnow()
+        if username:
+            user_stats["username"] = username
         if not user_stats["first_seen"]:
             user_stats["first_seen"] = now
             user_stats["last_active"] = now
@@ -201,7 +216,7 @@ class StatsManager:
             (
                 {
                     "user_id": uid,
-                    "username": None,
+                    "username": info.get("username"),
                     "count": info["count"],
                 }
                 for uid, info in stats["users"].items()
@@ -227,7 +242,12 @@ class StatsManager:
     async def get_user_stats(self, chat_id: int, user_id: int) -> Optional[Dict[str, Any]]:
         if self.db_manager.connection_string:
             user_row = await self.db_manager.execute_query(
-                "SELECT MessageCount, FirstSeen, LastActive FROM ChatUserStats WHERE ChatID = ? AND UserID = ?",
+                """
+                SELECT cus.MessageCount, cus.FirstSeen, cus.LastActive, up.Username
+                FROM ChatUserStats cus
+                LEFT JOIN UserProfiles up ON cus.UserID = up.UserID
+                WHERE cus.ChatID = ? AND cus.UserID = ?
+                """,
                 (chat_id, user_id), fetch_one=True,
             )
             if not user_row:
@@ -248,6 +268,7 @@ class StatsManager:
                 "messages": user_row.MessageCount,
                 "first_seen": user_row.FirstSeen,
                 "last_active": user_row.LastActive,
+                "username": user_row.Username,
                 "total_messages": total_row.TotalMessages if total_row else 0,
                 "rank": rank_row.Rank if rank_row else 1,
                 "total_users": total_users_row.Cnt if total_users_row else 1,
@@ -261,6 +282,7 @@ class StatsManager:
             "messages": user_stats["count"],
             "first_seen": user_stats["first_seen"],
             "last_active": user_stats["last_active"],
+            "username": user_stats.get("username"),
             "total_messages": stats["total_messages"],
             "rank": 1 + sum(1 for u in stats["users"].values() if u["count"] > user_stats["count"]),
             "total_users": len(stats["users"]),
