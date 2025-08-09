@@ -24,12 +24,14 @@
 """Spam detection module using OpenAI's moderation API."""
 
 import logging
+from typing import Optional
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from enkibot.modules.base_module import BaseModule
 from enkibot.core.llm_services import LLMServices
+from enkibot.utils.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +39,15 @@ logger = logging.getLogger(__name__)
 class SpamDetector(BaseModule):
     """Detects spam or disallowed content and takes moderation actions."""
 
-    def __init__(self, llm_services: LLMServices, enabled: bool = True):
+    def __init__(
+        self,
+        llm_services: LLMServices,
+        db_manager: Optional[DatabaseManager] = None,
+        enabled: bool = True,
+    ):
         super().__init__("SpamDetector")
         self.llm_services = llm_services
+        self.db_manager = db_manager
         self.enabled = enabled
         logger.info("SpamDetector initialized. Enabled=%s", self.enabled)
 
@@ -76,6 +84,20 @@ class SpamDetector(BaseModule):
         )
         message_id = update.message.message_id
         bot_name = context.bot.username or str(context.bot.id)
+
+        # Log moderation action to database if configured
+        if self.db_manager and self.db_manager.connection_string:
+            try:
+                categories = moderation_result.get("categories", {})
+                flagged = ", ".join([k for k, v in categories.items() if v])
+                await self.db_manager.log_moderation_action(
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    message_id=message_id,
+                    categories=flagged or None,
+                )
+            except Exception as e:  # pragma: no cover - logging shouldn't raise
+                logger.error("Failed to log moderation action: %s", e, exc_info=True)
 
         # Delete offending message
         try:

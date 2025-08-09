@@ -73,6 +73,7 @@ class EnkiBotApplication:
         )
         self.spam_detector = SpamDetector(
             self.llm_services,
+            self.db_manager,
             enabled=config.ENABLE_SPAM_DETECTION,
         )
         self.stats_manager = StatsManager(self.db_manager)
