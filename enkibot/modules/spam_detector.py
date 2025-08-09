@@ -70,9 +70,33 @@ class SpamDetector(BaseModule):
         # Ban user responsible for the message
         if user_id is not None:
             try:
-                await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
-                logger.info("Banned user %s for spam in chat %s", user_id, chat_id)
+                member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
             except Exception as e:
-                logger.error("Failed to ban user %s: %s", user_id, e)
+                logger.error("Failed to fetch member info for user %s: %s", user_id, e)
+            else:
+                if member.status == "creator":
+                    logger.warning("Cannot ban chat owner %s in chat %s", user_id, chat_id)
+                elif member.status == "administrator":
+                    try:
+                        bot_member = await context.bot.get_chat_member(
+                            chat_id=chat_id, user_id=context.bot.id
+                        )
+                        if bot_member.status == "creator":
+                            await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+                            logger.info(
+                                "Banned admin %s for spam in chat %s", user_id, chat_id
+                            )
+                        else:
+                            logger.warning(
+                                "Bot lacks rights to ban admin %s in chat %s", user_id, chat_id
+                            )
+                    except Exception as e:
+                        logger.error("Failed to ban admin %s: %s", user_id, e)
+                else:
+                    try:
+                        await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+                        logger.info("Banned user %s for spam in chat %s", user_id, chat_id)
+                    except Exception as e:
+                        logger.error("Failed to ban user %s: %s", user_id, e)
 
         return True
