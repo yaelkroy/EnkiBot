@@ -36,6 +36,7 @@ from enkibot.modules.response_generator import ResponseGenerator
 from enkibot.core.telegram_handlers import TelegramHandlerService
 from enkibot.modules.karma_manager import KarmaManager
 from enkibot.modules.spam_detector import SpamDetector
+from enkibot.modules.stats_manager import StatsManager
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class EnkiBotApplication:
         self.intent_recognizer = IntentRecognizer(self.llm_services)
         self.profile_manager = ProfileManager(self.llm_services, self.db_manager)
         self.api_router = ApiRouter(
-            weather_api_key=config.WEATHER_API_KEY, 
+            weather_api_key=config.WEATHER_API_KEY,
             news_api_key=config.NEWS_API_KEY,
             llm_services=self.llm_services
         )
@@ -74,6 +75,7 @@ class EnkiBotApplication:
             self.llm_services,
             enabled=config.ENABLE_SPAM_DETECTION,
         )
+        self.stats_manager = StatsManager(self.db_manager)
 
         # Initialize Telegram handlers, passing all necessary services
         self.handler_service = TelegramHandlerService(
@@ -86,6 +88,7 @@ class EnkiBotApplication:
             response_generator=self.response_generator,
             language_service=self.language_service,
             spam_detector=self.spam_detector,
+            stats_manager=self.stats_manager,
             allowed_group_ids=config.ALLOWED_GROUP_IDS, # Pass as set
             bot_nicknames=config.BOT_NICKNAMES_TO_CHECK # Pass as list
         )

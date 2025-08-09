@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from enkibot.modules.api_router import ApiRouter
     from enkibot.modules.response_generator import ResponseGenerator
     from enkibot.modules.spam_detector import SpamDetector
+    from enkibot.modules.stats_manager import StatsManager
     from .intent_handlers.weather_handler import WeatherIntentHandler
     from .intent_handlers.news_handler import NewsIntentHandler
     from .intent_handlers.general_handler import GeneralIntentHandler
@@ -77,6 +78,7 @@ class TelegramHandlerService:
                  response_generator: 'ResponseGenerator',
                  language_service: 'LanguageService',
                  spam_detector: 'SpamDetector',
+                 stats_manager: 'StatsManager',
                  allowed_group_ids: set,
                  bot_nicknames: list
                 ):
@@ -90,6 +92,7 @@ class TelegramHandlerService:
         self.response_generator = response_generator
         self.language_service = language_service
         self.spam_detector = spam_detector
+        self.stats_manager = stats_manager
         
         self.allowed_group_ids = allowed_group_ids 
         self.bot_nicknames = bot_nicknames
@@ -125,7 +128,7 @@ class TelegramHandlerService:
         logger.info("TelegramHandlerService __init__ COMPLETED")
 
     async def log_message_and_profile_tasks(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not update.message or not update.message.text or not update.effective_user: 
+        if not update.message or not update.message.text or not update.effective_user:
             return
         chat_id = update.effective_chat.id
         user = update.effective_user
@@ -138,6 +141,7 @@ class TelegramHandlerService:
             first_name=user.first_name, last_name=user.last_name,
             message_id=message.message_id, message_text=message.text,
             preferred_language=current_lang_for_log )
+        await self.stats_manager.log_message(chat_id, user.id, message.text)
         logger.info(f"Message from user {user.id} logged. Profile action: {action_taken}.")
         name_var_prompts = self.language_service.get_llm_prompt_set("name_variation_generator")
         if action_taken and action_taken.lower() == "insert" and name_var_prompts and "system" in name_var_prompts:
@@ -295,6 +299,7 @@ class TelegramHandlerService:
         for member in update.message.new_chat_members:
             if member.is_bot:
                 continue
+            await self.stats_manager.log_member_join(chat_id, member.id)
             if await self.db_manager.is_user_verified(member.id):
                 continue
             try:
@@ -315,6 +320,16 @@ class TelegramHandlerService:
             except Exception as e:
                 logger.error(f"Failed to restrict user {member.id}: {e}")
             await self._start_captcha(member, chat_id, context)
+
+    async def handle_left_chat_member(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.left_chat_member:
+            return
+        chat_id = update.effective_chat.id
+        if self.allowed_group_ids and chat_id not in self.allowed_group_ids:
+            return
+        member = update.message.left_chat_member
+        if member and not member.is_bot:
+            await self.stats_manager.log_member_leave(chat_id, member.id)
 
     async def captcha_button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -678,6 +693,49 @@ class TelegramHandlerService:
         self.language_service._set_current_language_internals(bot_config.DEFAULT_LANGUAGE)
         await update.message.reply_text(self.language_service.get_response_string("help"))
 
+    async def chat_stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.effective_chat:
+            return
+        stats = await self.stats_manager.get_chat_stats(update.effective_chat.id)
+        if not stats:
+            await update.message.reply_text("No statistics available yet.")
+            return
+        lines = [
+            "Chat Statistics:",
+            f"Total messages: {stats['total_messages']}",
+            f"Joins: {stats['joins']} | Leaves: {stats['leaves']}"
+        ]
+        if stats['top_users']:
+            lines.append("Top users:")
+            for u in stats['top_users']:
+                name = f"@{u['username']}" if u.get('username') else str(u['user_id'])
+                lines.append(f"- {name}: {u['count']}")
+        if stats['top_links']:
+            lines.append("Top links:")
+            for l in stats['top_links']:
+                lines.append(f"- {l['domain']}: {l['count']}")
+        await update.message.reply_text("\n".join(lines))
+
+    async def my_stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.effective_chat or not update.effective_user:
+            return
+        stats = await self.stats_manager.get_user_stats(update.effective_chat.id, update.effective_user.id)
+        if not stats:
+            await update.message.reply_text("No statistics available for you yet.")
+            return
+        total = stats['total_messages'] or 1
+        percent = (stats['messages'] / total) * 100
+        first_seen = stats['first_seen'] or datetime.utcnow()
+        days = max((datetime.utcnow() - first_seen).days + 1, 1)
+        avg_per_day = stats['messages'] / days
+        lines = [
+            f"You have sent {stats['messages']} messages ({percent:.1f}% of total).",
+            f"First seen: {first_seen:%Y-%m-%d}",
+            f"Average per day: {avg_per_day:.1f}",
+            f"Rank: {stats['rank']} of {stats['total_users']}"
+        ]
+        await update.message.reply_text("\n".join(lines))
+
     async def news_command_entry(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
         if not update.message or not update.effective_user: return ConversationHandler.END
         self.language_service._set_current_language_internals(bot_config.DEFAULT_LANGUAGE)
@@ -969,12 +1027,15 @@ class TelegramHandlerService:
         self.application.add_handler(CommandHandler("kick", self.kick_command))
         self.application.add_handler(CommandHandler("mute", self.mute_command))
         self.application.add_handler(CommandHandler("unmute", self.unmute_command))
+        self.application.add_handler(CommandHandler(["stat", "stats"], self.chat_stats_command))
+        self.application.add_handler(CommandHandler("mystat", self.my_stats_command))
         self.application.add_handler(CommandHandler("warn", self.warn_command))
         self.application.add_handler(CommandHandler("warns_list", self.warns_list_command))
         self.application.add_handler(CommandHandler(["rm_warn", "clear_warn"], self.remove_warn_command))
         self.application.add_handler(CommandHandler("toggle_nsfw", self.toggle_nsfw_filter_command))
         self.application.add_handler(CommandHandler("setspamthreshold", self.set_spam_threshold_command))
         self.application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.handle_new_chat_members))
+        self.application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, self.handle_left_chat_member))
         self.application.add_handler(CallbackQueryHandler(self.captcha_button_callback, pattern=r"^captcha_button:"))
         self.application.add_handler(CallbackQueryHandler(self.captcha_math_callback, pattern=r"^captcha_math:"))
         
