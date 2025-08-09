@@ -31,11 +31,17 @@ EnkiBot is an intelligent and adaptable Telegram assistant designed for rich, co
 * **Built-in Functions**:
     * Current weather and multi-day forecasts via OpenWeatherMap, with localized descriptions.
     * Latest news (general or topic-specific) via NewsAPI, with support for language/country biasing.
-* **Modular & Extensible Architecture**: 
+* **Modular & Extensible Architecture**:
     * Designed with a clean, modular structure (application core, language service, Telegram handlers, individual functional modules) for better maintainability, testability, and scalability.
 * **Configurable**: Group access restrictions, API keys, and LLM model IDs are managed via environment variables for security and flexibility.
 * **Robust Error Handling**: Includes database logging for critical errors and user-friendly error messages.
 * **(Planned) Darwinian Self-Improvement**: The project includes a foundational structure and conceptual plan for future integration of self-rewriting code and evolutionary capabilities, inspired by concepts like the Darwin Gödel Machine, aiming for autonomous advancement of the bot's Python modules and LLM prompts.
+* **Two-Tier Local Model Support**:
+    * Optional router for fully local inference using `llama.cpp` compatible models.
+    * Tier A: fast 7–8B models (e.g., Mistral‑7B or Llama‑3‑8B).
+    * Tier B: deep 70B/72B models (e.g., Llama‑3‑70B or Qwen‑2‑72B).
+    * The router escalates from Tier A to Tier B on `/deep` commands or complex prompts.
+    * Includes a basic web search tool and FAISS powered RAG module for citations and offline notes.
 
 ## Technology Stack
 
@@ -111,6 +117,16 @@ The project is organized into logical modules:
     pip install -r requirements.txt
     ```
 
+    If you plan to run the local two-tier models you also need:
+    ```txt
+    llama-cpp-python
+    duckduckgo-search
+    trafilatura
+    faiss-cpu
+    sentence-transformers
+    requests
+    ```
+
 4.  **Database Setup:**
     * Ensure your MS SQL Server is running and accessible.
     * The bot will attempt to create necessary tables/indexes on first run (see `enkibot/utils/database.py:initialize_database()`). The database specified in `ENKI_BOT_SQL_DATABASE_NAME` must exist, and the connection must have permissions to create tables.
@@ -158,6 +174,26 @@ The project is organized into logical modules:
     python -m enkibot.main
     ```
     The bot will start, and logs will be written to `bot_activity.log` and the console.
+
+### Using the Local Two-Tier Models
+
+1. Ensure the optional dependencies for local models are installed (see above).
+2. Download GGUF weights for the models you want to run, for example:
+   ```bash
+   wget https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/resolve/main/mistral-7b-instruct.Q5_K_M.gguf
+   wget https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct-GGUF/resolve/main/llama-3-70b-instruct.Q4_K_M.gguf
+   ```
+3. Launch the minimal Telegram bot that uses the local router:
+   ```bash
+   TELEGRAM_BOT_TOKEN=... python -m enkibot.local_telegram_bot
+   ```
+   Normal messages go to the fast 7–8B model. Use `/deep` to force the 70B/72B model or `/web <query>` to run a duckduckgo search and summarise the top pages with citations.
+4. (Optional) For Retrieval‑Augmented Generation, index your own documents:
+   ```python
+   from enkibot.modules.rag_service import RAGService
+   rag = RAGService(); rag.add_documents(["My notes...", "Another doc..."])
+   rag.query("question about my notes")
+   ```
 
 ## Testing
 
