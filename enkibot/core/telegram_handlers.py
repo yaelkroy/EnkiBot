@@ -34,6 +34,11 @@ from telegram.constants import ChatAction
 import re
 import random
 
+try:
+    from nudenet import NudeClassifier
+except Exception:
+    NudeClassifier = None
+
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
     from enkibot.utils.database import DatabaseManager
@@ -91,6 +96,7 @@ class TelegramHandlerService:
 
         self.pending_action_data: Dict[int, Dict[str, Any]] = {}
         self.pending_captchas: Dict[int, Dict[str, Any]] = {}
+        self.nsfw_classifier: Optional['NudeClassifier'] = None
 
         # Instantiate specialized handlers
         self.weather_handler = WeatherIntentHandler(
@@ -495,6 +501,68 @@ class TelegramHandlerService:
                 os.remove(temp_file_path)
                 logger.info(f"Cleaned up temporary audio file: {temp_file_path}")
 
+    async def handle_photo_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message:
+            return
+
+        chat_id = update.effective_chat.id
+        is_group = update.message.chat.type in ['group', 'supergroup']
+        if is_group and self.allowed_group_ids and chat_id not in self.allowed_group_ids:
+            logger.debug(f"handle_photo_message: Skipping photo from unallowed group {chat_id}.")
+            return
+
+        if not await self.db_manager.get_nsfw_filter_enabled(chat_id):
+            return
+
+        file_obj = None
+        ext = 'jpg'
+        if update.message.photo:
+            photo = update.message.photo[-1]
+            file_obj = await photo.get_file()
+        elif update.message.document and update.message.document.mime_type and update.message.document.mime_type.startswith('image/'):
+            file_obj = await update.message.document.get_file()
+            if update.message.document.file_name and '.' in update.message.document.file_name:
+                ext = update.message.document.file_name.rsplit('.', 1)[-1]
+        else:
+            return
+
+        temp_dir = 'temp_images'
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_file_path = os.path.join(temp_dir, f"{uuid.uuid4()}.{ext}")
+        await file_obj.download_to_drive(temp_file_path)
+
+        try:
+            if self.nsfw_classifier is None:
+                if NudeClassifier is None:
+                    logger.error("NSFW classifier library not installed. Install nudenet to enable filtering.")
+                    return
+                try:
+                    self.nsfw_classifier = NudeClassifier()
+                except Exception as e:
+                    logger.error(f"Failed to initialize NSFW classifier: {e}", exc_info=True)
+                    return
+
+            result = self.nsfw_classifier.classify(temp_file_path)
+            nsfw_score = result.get(temp_file_path, {}).get('unsafe', 0)
+            if nsfw_score >= bot_config.NSFW_DETECTION_THRESHOLD:
+                try:
+                    await update.message.delete()
+                    if update.effective_user:
+                        await context.bot.send_message(
+                            chat_id,
+                            f"\uD83D\uDEAB Removed an NSFW image from {update.effective_user.mention_html()}.",
+                            parse_mode='HTML'
+                        )
+                    else:
+                        await context.bot.send_message(chat_id, "\uD83D\uDEAB Removed an NSFW image.")
+                except Exception as e:
+                    logger.error(f"Error deleting NSFW image: {e}", exc_info=True)
+        finally:
+            try:
+                os.remove(temp_file_path)
+            except Exception:
+                pass
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
         if not update.message or not update.message.text or not update.effective_chat or not update.effective_user: 
             return None 
@@ -834,6 +902,21 @@ class TelegramHandlerService:
         await self.db_manager.clear_warnings(chat_id, target.id)
         await update.message.reply_text(f"Warnings cleared for user {target.id}.")
 
+    async def toggle_nsfw_filter_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.effective_user:
+            return
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        if not await self._is_user_admin(chat_id, user_id, context):
+            return
+        if not context.args or context.args[0].lower() not in ("on", "off"):
+            await update.message.reply_text("Usage: /toggle_nsfw <on|off>")
+            return
+        enabled = context.args[0].lower() == "on"
+        await self.db_manager.set_nsfw_filter_enabled(chat_id, enabled)
+        status = "enabled" if enabled else "disabled"
+        await update.message.reply_text(f"NSFW filter {status} for this chat.")
+
     async def set_spam_threshold_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.effective_user:
             return
@@ -889,6 +972,7 @@ class TelegramHandlerService:
         self.application.add_handler(CommandHandler("warn", self.warn_command))
         self.application.add_handler(CommandHandler("warns_list", self.warns_list_command))
         self.application.add_handler(CommandHandler(["rm_warn", "clear_warn"], self.remove_warn_command))
+        self.application.add_handler(CommandHandler("toggle_nsfw", self.toggle_nsfw_filter_command))
         self.application.add_handler(CommandHandler("setspamthreshold", self.set_spam_threshold_command))
         self.application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.handle_new_chat_members))
         self.application.add_handler(CallbackQueryHandler(self.captcha_button_callback, pattern=r"^captcha_button:"))
@@ -909,6 +993,7 @@ class TelegramHandlerService:
         self.application.add_handler(conv_handler)
 
         # Add the standalone handlers for voice and video note messages
+        self.application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, self.handle_photo_message))
         self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
         self.application.add_handler(MessageHandler(filters.VIDEO_NOTE, self.handle_video_note_message))
         
