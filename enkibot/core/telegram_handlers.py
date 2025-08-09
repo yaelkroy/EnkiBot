@@ -28,10 +28,11 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 
-from telegram import Update, ReplyKeyboardRemove, ChatPermissions
-from telegram.ext import Application, ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
+from telegram import Update, ReplyKeyboardRemove, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram.constants import ChatAction
-import re 
+import re
+import random
 
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
@@ -87,8 +88,9 @@ class TelegramHandlerService:
         
         self.allowed_group_ids = allowed_group_ids 
         self.bot_nicknames = bot_nicknames
-        
+
         self.pending_action_data: Dict[int, Dict[str, Any]] = {}
+        self.pending_captchas: Dict[int, Dict[str, Any]] = {}
 
         # Instantiate specialized handlers
         self.weather_handler = WeatherIntentHandler(
@@ -168,6 +170,200 @@ class TelegramHandlerService:
             return member.status in ("administrator", "creator")
         except Exception:
             return False
+
+    def _generate_math_captcha(self) -> tuple[str, list[int], int]:
+        a, b = random.randint(1, 20), random.randint(1, 20)
+        question = f"{a} + {b}"
+        correct = a + b
+        options = {correct}
+        while len(options) < 4:
+            options.add(random.randint(correct - 10, correct + 10))
+        option_list = list(options)
+        random.shuffle(option_list)
+        return question, option_list, correct
+
+    async def _start_captcha(self, user, chat_id: int, context: ContextTypes.DEFAULT_TYPE):
+        method = random.choice(["button", "math"])
+        mention = user.mention_html()
+        if method == "button":
+            text = (
+                f"Welcome, {mention}! Please prove you are human by clicking the button below within {bot_config.CAPTCHA_TIMEOUT_SECONDS} seconds."
+            )
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("✅ I'm a human!", callback_data=f"captcha_button:{user.id}")]]
+            )
+            msg = await context.bot.send_message(chat_id, text, reply_markup=keyboard, parse_mode="HTML")
+            self.pending_captchas[user.id] = {
+                "chat_id": chat_id,
+                "message_id": msg.message_id,
+                "type": "button",
+                "mention": mention,
+            }
+        else:
+            question, options, correct = self._generate_math_captcha()
+            text = (
+                f"Welcome, {mention}! Solve: {question} = ?"
+            )
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(str(opt), callback_data=f"captcha_math:{user.id}:{opt}") for opt in options]]
+            )
+            msg = await context.bot.send_message(chat_id, text, reply_markup=keyboard, parse_mode="HTML")
+            self.pending_captchas[user.id] = {
+                "chat_id": chat_id,
+                "message_id": msg.message_id,
+                "type": "math",
+                "correct": correct,
+                "attempts": bot_config.CAPTCHA_MAX_ATTEMPTS,
+                "mention": mention,
+            }
+
+        task = asyncio.create_task(self._captcha_timeout(user.id))
+        self.pending_captchas[user.id]["task"] = task
+
+    async def _captcha_timeout(self, user_id: int):
+        await asyncio.sleep(bot_config.CAPTCHA_TIMEOUT_SECONDS)
+        info = self.pending_captchas.get(user_id)
+        if not info:
+            return
+        chat_id = info["chat_id"]
+        try:
+            await self.application.bot.ban_chat_member(chat_id, user_id)
+            await self.application.bot.send_message(chat_id, f"❌ {info['mention']} failed verification and was removed.", parse_mode="HTML")
+            try:
+                await self.application.bot.delete_message(chat_id, info["message_id"])
+            except Exception:
+                pass
+        finally:
+            self.pending_captchas.pop(user_id, None)
+
+    async def _verify_user(self, user_id: int, context: ContextTypes.DEFAULT_TYPE):
+        info = self.pending_captchas.get(user_id)
+        if not info:
+            return
+        task = info.get("task")
+        if task:
+            task.cancel()
+        chat_id = info["chat_id"]
+        await context.bot.restrict_chat_member(
+            chat_id,
+            user_id,
+            permissions=ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True,
+                can_invite_users=True,
+            ),
+        )
+        try:
+            await context.bot.delete_message(chat_id, info["message_id"])
+        except Exception:
+            pass
+        await self.db_manager.add_verified_user(user_id)
+        await context.bot.send_message(chat_id, f"✅ {info['mention']} verified as human.", parse_mode="HTML")
+        self.pending_captchas.pop(user_id, None)
+
+    async def _fail_verification(self, user_id: int, context: ContextTypes.DEFAULT_TYPE):
+        info = self.pending_captchas.get(user_id)
+        if not info:
+            return
+        task = info.get("task")
+        if task:
+            task.cancel()
+        chat_id = info["chat_id"]
+        await context.bot.ban_chat_member(chat_id, user_id)
+        try:
+            await context.bot.delete_message(chat_id, info["message_id"])
+        except Exception:
+            pass
+        await context.bot.send_message(chat_id, f"❌ {info['mention']} failed verification and was removed.", parse_mode="HTML")
+        self.pending_captchas.pop(user_id, None)
+
+    async def handle_new_chat_members(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.new_chat_members:
+            return
+        chat_id = update.effective_chat.id
+        if self.allowed_group_ids and chat_id not in self.allowed_group_ids:
+            return
+        for member in update.message.new_chat_members:
+            if member.is_bot:
+                continue
+            if await self.db_manager.is_user_verified(member.id):
+                continue
+            try:
+                await context.bot.restrict_chat_member(
+                    chat_id,
+                    member.id,
+                    permissions=ChatPermissions(
+                        can_send_messages=False,
+                        can_send_media_messages=False,
+                        can_send_polls=False,
+                        can_send_other_messages=False,
+                        can_add_web_page_previews=False,
+                        can_invite_users=False,
+                        can_pin_messages=False,
+                        can_change_info=False,
+                    ),
+                )
+            except Exception as e:
+                logger.error(f"Failed to restrict user {member.id}: {e}")
+            await self._start_captcha(member, chat_id, context)
+
+    async def captcha_button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        if not query or not query.data:
+            return
+        parts = query.data.split(":")
+        if len(parts) != 2:
+            return
+        _, target_id_str = parts
+        target_id = int(target_id_str)
+        user_id = query.from_user.id
+        if user_id != target_id:
+            await query.answer("This is not your captcha.", show_alert=True)
+            return
+        await query.answer()
+        await self._verify_user(user_id, context)
+
+    async def captcha_math_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        if not query or not query.data:
+            return
+        parts = query.data.split(":")
+        if len(parts) != 3:
+            return
+        _, target_id_str, answer_str = parts
+        target_id = int(target_id_str)
+        answer = int(answer_str)
+        user_id = query.from_user.id
+        if user_id != target_id:
+            await query.answer("This is not your captcha.", show_alert=True)
+            return
+        info = self.pending_captchas.get(user_id)
+        if not info:
+            await query.answer()
+            return
+        if answer == info.get("correct"):
+            await query.answer("Correct!")
+            await self._verify_user(user_id, context)
+        else:
+            info["attempts"] -= 1
+            if info["attempts"] <= 0:
+                await query.answer("Wrong answer.")
+                await self._fail_verification(user_id, context)
+            else:
+                await query.answer("Wrong, try again.")
+                question, options, correct = self._generate_math_captcha()
+                info["correct"] = correct
+                keyboard = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton(str(opt), callback_data=f"captcha_math:{user_id}:{opt}") for opt in options]]
+                )
+                text = f"Solve: {question} = ?\nAttempts left: {info['attempts']}"
+                try:
+                    await query.edit_message_text(text, reply_markup=keyboard)
+                except Exception:
+                    pass
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.message.voice:
@@ -618,7 +814,7 @@ class TelegramHandlerService:
             )
         return ConversationHandler.END
 
-    def register_all_handlers(self): 
+    def register_all_handlers(self):
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("report", self.report_command))
@@ -632,6 +828,9 @@ class TelegramHandlerService:
         self.application.add_handler(CommandHandler("warns_list", self.warns_list_command))
         self.application.add_handler(CommandHandler(["rm_warn", "clear_warn"], self.remove_warn_command))
         self.application.add_handler(CommandHandler("setspamthreshold", self.set_spam_threshold_command))
+        self.application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.handle_new_chat_members))
+        self.application.add_handler(CallbackQueryHandler(self.captcha_button_callback, pattern=r"^captcha_button:"))
+        self.application.add_handler(CallbackQueryHandler(self.captcha_math_callback, pattern=r"^captcha_math:"))
         
         conv_handler = ConversationHandler(
             entry_points=[
