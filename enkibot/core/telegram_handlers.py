@@ -174,6 +174,15 @@ class TelegramHandlerService:
         if is_group and final_trigger_decision: logger.info(f"_is_triggered: True (Group: {current_chat_id}): @M={is_at_mentioned}, NickM={is_nickname_mentioned}, Reply={is_reply_to_bot}")
         return final_trigger_decision
 
+    def _extract_ai_trigger(self, text: str) -> tuple[str, bool]:
+        """Detects natural language invocations like 'Hey, Enki!' and strips them."""
+        pattern = r'^\s*hey[\s,]+enki[!,:]*\s*'
+        match = re.match(pattern, text, re.IGNORECASE)
+        if match:
+            cleaned = text[match.end():].lstrip()
+            return cleaned, True
+        return text, False
+
     async def _is_user_admin(self, chat_id: int, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
         try:
             member = await context.bot.get_chat_member(chat_id, user_id)
@@ -591,8 +600,9 @@ class TelegramHandlerService:
         await self.log_message_and_profile_tasks(update, context)
         
         chat_id = update.effective_chat.id
-        user_msg_txt = update.message.text
-        
+        user_msg_txt, triggered_by_prefix = self._extract_ai_trigger(update.message.text)
+        user_msg_txt_lower = user_msg_txt.lower()
+
         current_conv_state = context.user_data.get('conversation_state') if context.user_data else None
         pending_action_details = self.pending_action_data.get(chat_id)
 
@@ -607,10 +617,10 @@ class TelegramHandlerService:
             original_msg_id = pending_action_details.get("original_message_id")
             return await self.news_handler.handle_topic_response(update, context, original_msg_id)
 
-        user_msg_txt_lower = user_msg_txt.lower()
+        draw_request = bool(triggered_by_prefix and re.match(r'^\s*draw\b', user_msg_txt_lower))
         if await self.spam_detector.inspect_message(update, context):
             return ConversationHandler.END
-        if not await self._is_triggered(update, context, user_msg_txt_lower):
+        if not (triggered_by_prefix or await self._is_triggered(update, context, user_msg_txt_lower)):
             return None
 
         master_intent_prompts = self.language_service.get_llm_prompt_set("master_intent_classifier")
@@ -623,6 +633,9 @@ class TelegramHandlerService:
         else: 
             logger.error(f"Master intent classification prompt set missing/malformed for lang '{self.language_service.current_lang}'.")
         
+        if draw_request:
+            master_intent = "IMAGE_GENERATION_QUERY"
+
         logger.info(f"Master Intent for '{user_msg_txt[:50]}...' (lang: {self.language_service.current_lang}) classified as: {master_intent}")
 
         next_state: Optional[int] = None
