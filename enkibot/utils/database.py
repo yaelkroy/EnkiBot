@@ -365,6 +365,14 @@ class DatabaseManager:
         )
         return [(r.UserID, r.WarnCount) for r in rows] if rows else []
 
+    async def log_moderation_action(self, chat_id: int, user_id: Optional[int], message_id: int, categories: Optional[str]):
+        """Persist a moderation action to the database for audit purposes."""
+        await self.execute_query(
+            "INSERT INTO ModerationLog (ChatID, UserID, MessageID, Categories) VALUES (?, ?, ?, ?)",
+            (chat_id, user_id, message_id, categories),
+            commit=True,
+        )
+
 def initialize_database(): # This function defines and uses DatabaseManager locally
     if not config.DB_CONNECTION_STRING:
         logger.warning("Cannot initialize database: Connection string not configured.")
@@ -397,6 +405,8 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "SpamReports": "CREATE TABLE SpamReports (ReportID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, TargetUserID BIGINT NOT NULL, ReporterUserID BIGINT NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, CONSTRAINT UQ_SpamReports UNIQUE (ChatID, TargetUserID, ReporterUserID));",
         "IX_SpamReports_Chat_Target": "CREATE INDEX IX_SpamReports_Chat_Target ON SpamReports (ChatID, TargetUserID);",
         "VerifiedUsers": "CREATE TABLE VerifiedUsers (UserID BIGINT PRIMARY KEY, VerifiedAt DATETIME2 DEFAULT GETDATE());",
+        "ModerationLog": "CREATE TABLE ModerationLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, UserID BIGINT NULL, MessageID BIGINT NOT NULL, Categories NVARCHAR(255) NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
+        "IX_ModerationLog_ChatID_Timestamp": "CREATE INDEX IX_ModerationLog_ChatID_Timestamp ON ModerationLog (ChatID, Timestamp DESC);",
     }
     try:
         with conn.cursor() as cursor:
