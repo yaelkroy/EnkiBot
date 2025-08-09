@@ -433,6 +433,68 @@ class TelegramHandlerService:
                 os.remove(temp_file_path)
                 logger.info(f"Cleaned up temporary audio file: {temp_file_path}")
 
+    async def handle_video_note_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.video_note:
+            return
+
+        chat_id = update.effective_chat.id
+        is_group = update.message.chat.type in ['group', 'supergroup']
+        if is_group and self.allowed_group_ids and chat_id not in self.allowed_group_ids:
+            logger.debug(f"handle_video_note_message: Skipping video note from unallowed group {chat_id}.")
+            return
+
+        self.language_service._set_current_language_internals('ru')
+        await update.message.reply_text(self.language_service.get_response_string("video_message_received"))
+
+        video_file = await update.message.video_note.get_file()
+
+        temp_dir = "temp_audio"
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_file_path = os.path.join(temp_dir, f"{uuid.uuid4()}.mp4")
+
+        try:
+            await video_file.download_to_drive(temp_file_path)
+
+            transcribed_text = await self.llm_services.transcribe_audio(temp_file_path)
+
+            if not transcribed_text:
+                await update.message.reply_text(self.language_service.get_response_string("video_transcription_failed"))
+                return
+
+            transcription_header = self.language_service.get_response_string("video_transcription_header")
+            await update.message.reply_text(f"*{transcription_header}*\n\n`{transcribed_text}`", parse_mode='MarkdownV2')
+
+            is_russian = bool(re.search('[а-яА-Я]', transcribed_text))
+
+            if not is_russian:
+                logger.info("Transcribed text is not Russian. Proceeding with translation.")
+
+                translation_prompts = self.language_service.get_llm_prompt_set("text_translator")
+
+                if translation_prompts and "system" in translation_prompts and "user_template" in translation_prompts:
+                    translated_text = await self.response_generator.translate_text(
+                        text_to_translate=transcribed_text,
+                        target_language="Russian",
+                        system_prompt=translation_prompts["system"],
+                        user_prompt_template=translation_prompts["user_template"]
+                    )
+
+                    if translated_text:
+                        translation_header = self.language_service.get_response_string("video_translation_header")
+                        await update.message.reply_text(f"*{translation_header}*\n\n`{translated_text}`", parse_mode='MarkdownV2')
+                    else:
+                        logger.error("Translation failed for transcribed video note.")
+                else:
+                    logger.error("Could not find 'text_translator' prompts in language pack.")
+
+        except Exception as e:
+            logger.error(f"Error processing video note: {e}", exc_info=True)
+            await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
+        finally:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                logger.info(f"Cleaned up temporary audio file: {temp_file_path}")
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
         if not update.message or not update.message.text or not update.effective_chat or not update.effective_user: 
             return None 
@@ -846,8 +908,9 @@ class TelegramHandlerService:
         )
         self.application.add_handler(conv_handler)
 
-        # Add the standalone handler for voice messages
+        # Add the standalone handlers for voice and video note messages
         self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
+        self.application.add_handler(MessageHandler(filters.VIDEO_NOTE, self.handle_video_note_message))
         
         self.application.add_error_handler(self.error_handler)
         logger.info("TelegramHandlerService: All handlers registered.")

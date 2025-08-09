@@ -115,7 +115,11 @@
     "voice_message_received": "Received your voice message. Processing...",
     "voice_transcription_failed": "Sorry, I couldn't understand the audio in that message.",
     "voice_transcription_header": "Transcription:",
-    "voice_translation_header": "Translation (Russian):"
+    "voice_translation_header": "Translation (Russian):",
+    "video_message_received": "Received your video note. Processing...",
+    "video_transcription_failed": "Sorry, I couldn't understand the audio in that video.",
+    "video_transcription_header": "Video transcription:",
+    "video_translation_header": "Video translation (Russian):"
   },
   "weather_conditions_map": {
     "clear_sky": "Clear sky",
