@@ -38,6 +38,11 @@ BOT_NICKNAMES_TO_CHECK = ["enki", "enkibot", "энки", "энкибот", "бо
 # Feature toggles
 ENABLE_SPAM_DETECTION = os.getenv('ENKI_BOT_ENABLE_SPAM_DETECTION', 'true').lower() == 'true'
 
+# Community moderation settings
+DEFAULT_SPAM_VOTE_THRESHOLD = int(os.getenv('ENKI_BOT_SPAM_VOTE_THRESHOLD', '3'))
+SPAM_VOTE_TIME_WINDOW_MINUTES = int(os.getenv('ENKI_BOT_SPAM_VOTE_WINDOW_MINUTES', '60'))
+REPORTS_CHANNEL_ID = int(os.getenv('ENKI_BOT_REPORTS_CHANNEL_ID')) if os.getenv('ENKI_BOT_REPORTS_CHANNEL_ID') else None
+
 # Timeout settings for Telegram HTTP requests (in seconds).
 TELEGRAM_CONNECT_TIMEOUT = float(os.getenv('ENKI_BOT_TELEGRAM_CONNECT_TIMEOUT', '30'))
 TELEGRAM_READ_TIMEOUT = float(os.getenv('ENKI_BOT_TELEGRAM_READ_TIMEOUT', '30'))
