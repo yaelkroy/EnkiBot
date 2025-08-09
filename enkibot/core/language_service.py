@@ -215,13 +215,18 @@ class LanguageService:
                 await update_context.effective_message.reply_text(self.get_response_string("language_pack_creation_failed_fallback"))
             return False
 
-    async def determine_language_context(self, 
-                                         current_message_text: Optional[str], 
-                                         chat_id: Optional[int], 
+    async def determine_language_context(self,
+                                         current_message_text: Optional[str],
+                                         chat_id: Optional[int],
                                          update_context: Optional[Update] = None) -> str:
-        LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD = 0.70  
-        NUM_RECENT_MESSAGES_FOR_CONTEXT = 2 
-        MIN_MESSAGE_LENGTH_FOR_LLM_INPUT = 5 
+        if current_message_text and self._is_non_language_text(current_message_text):
+            logger.info("Input appears to be non-language text (e.g., URL); using default language without detection.")
+            self._set_current_language_internals(self.default_language)
+            return self.current_lang
+
+        LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD = 0.70
+        NUM_RECENT_MESSAGES_FOR_CONTEXT = 2
+        MIN_MESSAGE_LENGTH_FOR_LLM_INPUT = 5
         MIN_AGGREGATED_TEXT_LENGTH_FOR_LLM = 15
 
         final_candidate_lang_code = self.current_lang if self.current_lang != "none" else self.default_language
@@ -324,6 +329,27 @@ class LanguageService:
             self._set_current_language_internals(final_candidate_lang_code)
             
         return self.current_lang
+
+    @staticmethod
+    def _is_non_language_text(text: str) -> bool:
+        """Return True if text likely isn't natural language (e.g., URLs or code)."""
+        if not text:
+            return True
+
+        stripped = text.strip()
+
+        url_patterns = [
+            r'^(?:https?://|www\.)\S+$',
+            r'^[\w.-]+\.[a-z]{2,}(?:/\S*)?$'
+        ]
+        for pattern in url_patterns:
+            if re.match(pattern, stripped, re.IGNORECASE):
+                return True
+
+        if not any(ch.isalpha() for ch in stripped):
+            return True
+
+        return False
     
     def get_llm_prompt_set(self, key: str) -> Optional[Dict[str, str]]:
         current_prompts_to_check = self.current_llm_prompt_sets
