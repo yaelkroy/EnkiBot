@@ -28,7 +28,6 @@ from typing import Optional
 from telegram import Update
 from telegram.ext import Application
 from telegram.request import HTTPXRequest
-import httpx
 
 from enkibot import config
 from enkibot.utils.logging_config import setup_logging
@@ -61,14 +60,10 @@ def main() -> None:
     try:
         logger.info("Initializing Telegram PTB Application...")
         request = HTTPXRequest(
-            client=httpx.AsyncClient(
-                timeout=httpx.Timeout(
-                    connect=config.TELEGRAM_CONNECT_TIMEOUT,
-                    read=config.TELEGRAM_READ_TIMEOUT,
-                    write=config.TELEGRAM_WRITE_TIMEOUT,
-                    pool=config.TELEGRAM_POOL_TIMEOUT,
-                )
-            )
+            connect_timeout=config.TELEGRAM_CONNECT_TIMEOUT,
+            read_timeout=config.TELEGRAM_READ_TIMEOUT,
+            write_timeout=config.TELEGRAM_WRITE_TIMEOUT,
+            pool_timeout=config.TELEGRAM_POOL_TIMEOUT,
         )
         ptb_app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).request(request).build()
         
