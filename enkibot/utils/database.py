@@ -196,6 +196,25 @@ class DatabaseManager:
         rows = await self.execute_query(query, (limit, user_id, chat_id), fetch_all=True)
         return [row.MessageText for row in rows] if rows else []
 
+    async def add_verified_user(self, user_id: int):
+        """Add or update a user in the global verification table."""
+        await self.execute_query(
+            "MERGE VerifiedUsers AS t USING (VALUES(?)) AS s(UserID) "
+            "ON t.UserID = s.UserID "
+            "WHEN MATCHED THEN UPDATE SET VerifiedAt = GETDATE() "
+            "WHEN NOT MATCHED THEN INSERT (UserID, VerifiedAt) VALUES (s.UserID, GETDATE());",
+            (user_id,),
+            commit=True,
+        )
+
+    async def is_user_verified(self, user_id: int) -> bool:
+        row = await self.execute_query(
+            "SELECT 1 FROM VerifiedUsers WHERE UserID = ?",
+            (user_id,),
+            fetch_one=True,
+        )
+        return bool(row)
+
     async def add_spam_vote(self, chat_id: int, target_user_id: int, reporter_user_id: int) -> bool:
         """Records a spam vote if one doesn't already exist for this reporter/target pair."""
         if not self.connection_string:
@@ -347,6 +366,7 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "ChatSettings": "CREATE TABLE ChatSettings (ChatID BIGINT PRIMARY KEY, SpamVoteThreshold INT NOT NULL DEFAULT 3);",
         "SpamReports": "CREATE TABLE SpamReports (ReportID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, TargetUserID BIGINT NOT NULL, ReporterUserID BIGINT NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, CONSTRAINT UQ_SpamReports UNIQUE (ChatID, TargetUserID, ReporterUserID));",
         "IX_SpamReports_Chat_Target": "CREATE INDEX IX_SpamReports_Chat_Target ON SpamReports (ChatID, TargetUserID);",
+        "VerifiedUsers": "CREATE TABLE VerifiedUsers (UserID BIGINT PRIMARY KEY, VerifiedAt DATETIME2 DEFAULT GETDATE());",
     }
     try:
         with conn.cursor() as cursor:

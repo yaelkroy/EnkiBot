@@ -37,6 +37,8 @@ BOT_NICKNAMES_TO_CHECK = ["enki", "enkibot", "энки", "энкибот", "бо
 
 # Feature toggles
 ENABLE_SPAM_DETECTION = os.getenv('ENKI_BOT_ENABLE_SPAM_DETECTION', 'true').lower() == 'true'
+CAPTCHA_TIMEOUT_SECONDS = int(os.getenv('ENKI_BOT_CAPTCHA_TIMEOUT_SECONDS', '60'))
+CAPTCHA_MAX_ATTEMPTS = int(os.getenv('ENKI_BOT_CAPTCHA_MAX_ATTEMPTS', '3'))
 
 # Community moderation settings
 DEFAULT_SPAM_VOTE_THRESHOLD = int(os.getenv('ENKI_BOT_SPAM_VOTE_THRESHOLD', '3'))
