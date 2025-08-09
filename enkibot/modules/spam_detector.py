@@ -33,6 +33,7 @@ from enkibot.core.llm_services import LLMServices
 
 logger = logging.getLogger(__name__)
 
+
 class SpamDetector(BaseModule):
     """Detects spam or disallowed content and takes moderation actions."""
 
@@ -42,7 +43,9 @@ class SpamDetector(BaseModule):
         self.enabled = enabled
         logger.info("SpamDetector initialized. Enabled=%s", self.enabled)
 
-    async def inspect_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    async def inspect_message(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> bool:
         """Checks a message and removes it if flagged.
 
         Returns ``True`` if a message was flagged and handled (deleted/banned).
@@ -52,51 +55,141 @@ class SpamDetector(BaseModule):
         if not update.message or not update.message.text:
             return False
 
-        moderation_result = await self.llm_services.moderate_text_openai(update.message.text)
+        moderation_result = await self.llm_services.moderate_text_openai(
+            update.message.text
+        )
         if not moderation_result or not moderation_result.get("flagged"):
             return False
 
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id if update.effective_user else None
+        chat = update.effective_chat
+        chat_id = chat.id
+        chat_name = (
+            chat.title
+            or getattr(chat, "full_name", None)
+            or chat.username
+            or str(chat_id)
+        )
+        user = update.effective_user
+        user_id = user.id if user else None
+        user_name = (user.full_name if user else None) or getattr(
+            user, "username", "Unknown"
+        )
         message_id = update.message.message_id
+        bot_name = context.bot.username or str(context.bot.id)
 
         # Delete offending message
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-            logger.info("Deleted flagged message %s in chat %s", message_id, chat_id)
+            logger.info(
+                "Bot %s deleted flagged message %s from %s (%s) in chat %s (%s)",
+                bot_name,
+                message_id,
+                user_name,
+                user_id,
+                chat_name,
+                chat_id,
+            )
         except Exception as e:
-            logger.error("Failed to delete flagged message %s: %s", message_id, e)
+            logger.error(
+                "Bot %s failed to delete flagged message %s from %s (%s) in chat %s (%s): %s",
+                bot_name,
+                message_id,
+                user_name,
+                user_id,
+                chat_name,
+                chat_id,
+                e,
+            )
 
         # Ban user responsible for the message
         if user_id is not None:
             try:
-                member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+                member = await context.bot.get_chat_member(
+                    chat_id=chat_id, user_id=user_id
+                )
             except Exception as e:
-                logger.error("Failed to fetch member info for user %s: %s", user_id, e)
+                logger.error(
+                    "Bot %s failed to fetch member info for user %s (%s) in chat %s (%s): %s",
+                    bot_name,
+                    user_name,
+                    user_id,
+                    chat_name,
+                    chat_id,
+                    e,
+                )
             else:
+                user_name = (
+                    member.user.full_name
+                    or getattr(member.user, "username", None)
+                    or str(user_id)
+                )
                 if member.status == "creator":
-                    logger.warning("Cannot ban chat owner %s in chat %s", user_id, chat_id)
+                    logger.warning(
+                        "Bot %s cannot ban chat owner %s (%s) in chat %s (%s)",
+                        bot_name,
+                        user_name,
+                        user_id,
+                        chat_name,
+                        chat_id,
+                    )
                 elif member.status == "administrator":
                     try:
                         bot_member = await context.bot.get_chat_member(
                             chat_id=chat_id, user_id=context.bot.id
                         )
                         if bot_member.status == "creator":
-                            await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+                            await context.bot.ban_chat_member(
+                                chat_id=chat_id, user_id=user_id
+                            )
                             logger.info(
-                                "Banned admin %s for spam in chat %s", user_id, chat_id
+                                "Bot %s banned admin %s (%s) for spam in chat %s (%s)",
+                                bot_name,
+                                user_name,
+                                user_id,
+                                chat_name,
+                                chat_id,
                             )
                         else:
                             logger.warning(
-                                "Bot lacks rights to ban admin %s in chat %s", user_id, chat_id
+                                "Bot %s lacks rights to ban admin %s (%s) in chat %s (%s)",
+                                bot_name,
+                                user_name,
+                                user_id,
+                                chat_name,
+                                chat_id,
                             )
                     except Exception as e:
-                        logger.error("Failed to ban admin %s: %s", user_id, e)
+                        logger.error(
+                            "Bot %s failed to ban admin %s (%s) in chat %s (%s): %s",
+                            bot_name,
+                            user_name,
+                            user_id,
+                            chat_name,
+                            chat_id,
+                            e,
+                        )
                 else:
                     try:
-                        await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
-                        logger.info("Banned user %s for spam in chat %s", user_id, chat_id)
+                        await context.bot.ban_chat_member(
+                            chat_id=chat_id, user_id=user_id
+                        )
+                        logger.info(
+                            "Bot %s banned user %s (%s) for spam in chat %s (%s)",
+                            bot_name,
+                            user_name,
+                            user_id,
+                            chat_name,
+                            chat_id,
+                        )
                     except Exception as e:
-                        logger.error("Failed to ban user %s: %s", user_id, e)
+                        logger.error(
+                            "Bot %s failed to ban user %s (%s) in chat %s (%s): %s",
+                            bot_name,
+                            user_name,
+                            user_id,
+                            chat_name,
+                            chat_id,
+                            e,
+                        )
 
         return True
