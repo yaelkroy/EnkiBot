@@ -254,3 +254,34 @@ class LLMServices:
         except Exception as e:
             logger.error(f"Unexpected error during audio transcription: {e}", exc_info=True)
         return None
+
+    # --- NEW METHOD FOR MODERATION ---
+    async def moderate_text_openai(self, text: str) -> Optional[Dict[str, Any]]:
+        """Calls OpenAI's moderation endpoint on the supplied text.
+
+        Returns a dictionary with the moderation result or ``None`` if the
+        moderation service is not available or an error occurred.
+        """
+        if not self.is_provider_configured("openai"):
+            logger.warning("OpenAI client not configured. Cannot moderate text.")
+            return None
+
+        try:
+            response = await self.openai_async_client.moderations.create(
+                model="omni-moderation-latest",
+                input=text,
+            )
+            if response.results:
+                result = response.results[0]
+                # Extract minimal useful information. ``result`` is an
+                # OpenAI object; convert to a standard dict for downstream
+                # processing.
+                return {
+                    "flagged": bool(getattr(result, "flagged", False)),
+                    "categories": getattr(result, "categories", {}),
+                }
+        except openai.APIError as e:
+            logger.error(f"OpenAI Moderation API Error: {e.message}")
+        except Exception as e:
+            logger.error(f"Unexpected error during moderation call: {e}", exc_info=True)
+        return None
