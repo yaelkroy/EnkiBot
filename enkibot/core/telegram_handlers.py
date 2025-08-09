@@ -27,6 +27,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
+from types import SimpleNamespace
 
 from telegram import Update, ReplyKeyboardRemove, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
@@ -141,7 +142,7 @@ class TelegramHandlerService:
             first_name=user.first_name, last_name=user.last_name,
             message_id=message.message_id, message_text=message.text,
             preferred_language=current_lang_for_log )
-        await self.stats_manager.log_message(chat_id, user.id, message.text)
+        await self.stats_manager.log_message(chat_id, user.id, message.text, user.username)
         logger.info(f"Message from user {user.id} logged. Profile action: {action_taken}.")
         name_var_prompts = self.language_service.get_llm_prompt_set("name_variation_generator")
         if action_taken and action_taken.lower() == "insert" and name_var_prompts and "system" in name_var_prompts:
@@ -308,7 +309,7 @@ class TelegramHandlerService:
         for member in update.message.new_chat_members:
             if member.is_bot:
                 continue
-            await self.stats_manager.log_member_join(chat_id, member.id)
+            await self.stats_manager.log_member_join(chat_id, member.id, member.username)
             if await self.db_manager.is_user_verified(member.id):
                 continue
             try:
@@ -749,6 +750,49 @@ class TelegramHandlerService:
         ]
         await update.message.reply_text("\n".join(lines))
 
+    async def user_stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.effective_chat:
+            return
+        target_user = None
+        if update.message.reply_to_message and update.message.reply_to_message.from_user:
+            target_user = update.message.reply_to_message.from_user
+        elif context.args:
+            arg = context.args[0]
+            if arg.startswith('@'):
+                username = arg[1:].lower()
+                stats = self.stats_manager.memory_stats.get(update.effective_chat.id, {})
+                for uid, info in stats.get('users', {}).items():
+                    if info.get('username') and info['username'].lower() == username:
+                        target_user = SimpleNamespace(id=uid, username=info['username'], full_name=info['username'])
+                        break
+            elif arg.isdigit():
+                try:
+                    member = await context.bot.get_chat_member(update.effective_chat.id, int(arg))
+                    target_user = member.user
+                except Exception:
+                    target_user = SimpleNamespace(id=int(arg), username=None, full_name=arg)
+        if not target_user:
+            await update.message.reply_text("Reply to a user's message or provide a user ID/username.")
+            return
+        stats = await self.stats_manager.get_user_stats(update.effective_chat.id, target_user.id)
+        if not stats:
+            await update.message.reply_text("No statistics available for this user yet.")
+            return
+        total = stats['total_messages'] or 1
+        percent = (stats['messages'] / total) * 100
+        first_seen = stats['first_seen'] or datetime.utcnow()
+        days = max((datetime.utcnow() - first_seen).days + 1, 1)
+        avg_per_day = stats['messages'] / days
+        name = target_user.full_name if getattr(target_user, 'full_name', None) else (target_user.username or str(target_user.id))
+        lines = [
+            f"Stats for {name}:",
+            f"Messages: {stats['messages']} ({percent:.1f}% of total)",
+            f"First seen: {first_seen:%Y-%m-%d}",
+            f"Average per day: {avg_per_day:.1f}",
+            f"Rank: {stats['rank']} of {stats['total_users']}"
+        ]
+        await update.message.reply_text("\n".join(lines))
+
     async def news_command_entry(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
         if not update.message or not update.effective_user: return ConversationHandler.END
         self.language_service._set_current_language_internals(bot_config.DEFAULT_LANGUAGE)
@@ -1042,6 +1086,7 @@ class TelegramHandlerService:
         self.application.add_handler(CommandHandler("unmute", self.unmute_command))
         self.application.add_handler(CommandHandler(["stat", "stats"], self.chat_stats_command))
         self.application.add_handler(CommandHandler("mystat", self.my_stats_command))
+        self.application.add_handler(CommandHandler("userstats", self.user_stats_command))
         self.application.add_handler(CommandHandler("warn", self.warn_command))
         self.application.add_handler(CommandHandler("warns_list", self.warns_list_command))
         self.application.add_handler(CommandHandler(["rm_warn", "clear_warn"], self.remove_warn_command))
