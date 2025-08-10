@@ -76,6 +76,25 @@ class ResponseGenerator:
             logger.error(f"Error in LLM call during replied message analysis: {e}", exc_info=True)
             return "Sorry, an error occurred during the text analysis."
 
+    async def fact_check_forwarded_message(self, forwarded_text: str, user_question: str,
+                                           system_prompt: str, user_prompt_template: Optional[str]) -> str:
+        """Performs a fact-check on a forwarded message using LLM deep-research capabilities."""
+        logger.info(
+            "ResponseGenerator: Fact-checking forwarded message. Length: %d, Q: '%s'",
+            len(forwarded_text), user_question
+        )
+        user_prompt = (
+            user_prompt_template or
+            "Forwarded Text:\n---\n{forwarded_text}\n---\n\nUser's Question:\n---\n{user_question}\n---\n\nYour Fact-Check:"
+        ).format(forwarded_text=forwarded_text, user_question=user_question)
+        messages_for_api = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+        try:
+            fact_check_response = await self.llm_services.race_llm_calls(messages_for_api)
+            return fact_check_response or "I couldn't verify that message right now."
+        except Exception as e:
+            logger.error("Error in LLM call during forwarded message fact-check: %s", e, exc_info=True)
+            return "Sorry, I couldn't verify that message."
+
     async def compile_weather_forecast_response(self, forecast_data_structured: Dict[str, Any], lang_code: str, system_prompt: str, user_prompt_template: str) -> str:
         location = forecast_data_structured.get("location", "the requested location")
         forecast_data_json_str = json.dumps(forecast_data_structured.get("forecast_days", []), indent=2, ensure_ascii=False)
