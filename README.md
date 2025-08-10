@@ -165,6 +165,8 @@ The project is organized into logical modules:
     ENKI_BOT_OPENAI_DEEP_RESEARCH_MODEL_ID="o3-deep-research"
     ENKI_BOT_OPENAI_EMBEDDING_MODEL_ID="text-embedding-3-large"
     ENKI_BOT_OPENAI_MULTIMODAL_IMAGE_MODEL_ID="gpt-4o"
+    ENKI_BOT_OPENAI_SEARCH_USER_LOCATION="{\"country\":\"US\"}"
+    ENKI_BOT_OPENAI_SEARCH_CONTEXT_SIZE="medium"
 
     # ENKI_BOT_GROQ_API_KEY="gsk_YOUR_GROQ_KEY"
     # ENKI_BOT_GROQ_MODEL_ID="llama3-8b-8192"
