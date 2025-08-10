@@ -286,7 +286,15 @@ class DatabaseManager:
             commit=True,
         )
 
+    async def _ensure_nsfw_column(self):
+        await self.execute_query(
+            "IF COL_LENGTH('ChatSettings', 'NSFWFilterEnabled') IS NULL "
+            "ALTER TABLE ChatSettings ADD NSFWFilterEnabled BIT NOT NULL DEFAULT 0;",
+            commit=True,
+        )
+
     async def get_nsfw_filter_enabled(self, chat_id: int) -> bool:
+        await self._ensure_nsfw_column()
         row = await self.execute_query(
             "SELECT NSFWFilterEnabled FROM ChatSettings WHERE ChatID = ?",
             (chat_id,),
@@ -302,6 +310,7 @@ class DatabaseManager:
         return bool(config.NSFW_FILTER_DEFAULT_ENABLED)
 
     async def set_nsfw_filter_enabled(self, chat_id: int, enabled: bool):
+        await self._ensure_nsfw_column()
         await self.execute_query(
             "MERGE ChatSettings AS t USING (VALUES(?,?,?)) AS s(ChatID,SpamVoteThreshold,NSFWFilterEnabled) "
             "ON t.ChatID=s.ChatID "
