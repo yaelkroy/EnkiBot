@@ -679,9 +679,9 @@ class TelegramHandlerService:
 
     async def _handle_message_analysis_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt: str) -> None:
         is_valid_reply_scenario = (
-            update.message and update.message.reply_to_message and 
-            update.message.reply_to_message.text and 
-            update.message.reply_to_message.from_user and context.bot and 
+            update.message and update.message.reply_to_message and
+            (update.message.reply_to_message.text or update.message.reply_to_message.caption) and
+            update.message.reply_to_message.from_user and context.bot and
             update.message.reply_to_message.from_user.id != context.bot.id )
         if not is_valid_reply_scenario:
             logger.info("MESSAGE_ANALYSIS_QUERY classified, but not valid reply. Delegating to GeneralIntentHandler.")
@@ -690,7 +690,8 @@ class TelegramHandlerService:
         
         logger.info("TelegramHandlers: Processing MESSAGE_ANALYSIS_QUERY directly.")
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        original_text = update.message.reply_to_message.text
+        original_msg = update.message.reply_to_message
+        original_text = original_msg.text or original_msg.caption or ""
         question_for_analysis = user_msg_txt
         bot_username_lower = getattr(context.bot, 'username', "").lower() if getattr(context.bot, 'username', None) else ""
         cleaned_question = user_msg_txt.lower()
@@ -699,15 +700,33 @@ class TelegramHandlerService:
         if len(cleaned_question) < 5: 
             question_for_analysis = self.language_service.get_response_string("replied_message_default_question")
         
-        analyzer_prompts = self.language_service.get_llm_prompt_set("replied_message_analyzer")
-        if not (analyzer_prompts and "system" in analyzer_prompts) : 
-            logger.error("Prompt set for replied message analysis is missing or malformed."); 
-            await update.message.reply_text(self.language_service.get_response_string("generic_error_message")); 
-            return 
-        
-        analysis_result = await self.response_generator.analyze_replied_message(
-            original_text=original_text, user_question=question_for_analysis,
-            system_prompt=analyzer_prompts["system"], user_prompt_template=analyzer_prompts.get("user_template") )
+        is_forwarded = bool(
+            original_msg.forward_from or original_msg.forward_from_chat or original_msg.forward_sender_name
+        )
+        if is_forwarded:
+            analyzer_prompts = self.language_service.get_llm_prompt_set("forwarded_news_fact_checker")
+            if not (analyzer_prompts and "system" in analyzer_prompts):
+                logger.error("Prompt set for forwarded news fact-check is missing or malformed.")
+                await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
+                return
+            analysis_result = await self.response_generator.fact_check_forwarded_message(
+                forwarded_text=original_text,
+                user_question=question_for_analysis,
+                system_prompt=analyzer_prompts["system"],
+                user_prompt_template=analyzer_prompts.get("user_template")
+            )
+        else:
+            analyzer_prompts = self.language_service.get_llm_prompt_set("replied_message_analyzer")
+            if not (analyzer_prompts and "system" in analyzer_prompts):
+                logger.error("Prompt set for replied message analysis is missing or malformed.")
+                await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
+                return
+            analysis_result = await self.response_generator.analyze_replied_message(
+                original_text=original_text,
+                user_question=question_for_analysis,
+                system_prompt=analyzer_prompts["system"],
+                user_prompt_template=analyzer_prompts.get("user_template")
+            )
         await update.message.reply_text(analysis_result)
         
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
