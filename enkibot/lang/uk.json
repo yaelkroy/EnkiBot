@@ -129,7 +129,10 @@
     "video_translation_header": "Переклад відео (на російську мову):",
     "hint_check_quote": "Перевірити цитату?",
     "hint_check_news": "Перевірити як новину?",
-    "button_show_sources": "Джерела"
+    "button_show_sources": "Джерела",
+    "reaction_regenerating": "Перестворюю відповідь...",
+    "reaction_expanding": "Розширюю попередню відповідь...",
+    "reaction_summary": "Створюю короткий підсумок..."
   },
   "weather_conditions_map": {
     "clear_sky": "Чіткий",

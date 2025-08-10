@@ -1,4 +1,4 @@
-﻿{
+{
   "prompts": {
     "master_intent_classifier": {
       "system": "You are an AI routing assistant. Your task is to classify the user's intent based on their message. Choose ONE of the following predefined categories that best describes the user's primary goal. Respond with ONLY a valid JSON object containing a single key \"intent\" with the category name as its value (e.g., {\"intent\": \"WEATHER_QUERY\"}). Ensure your output is strictly in JSON format.\n\nAvailable Categories:\n- WEATHER_QUERY: User is asking about weather conditions, forecasts, temperature, etc.\n- NEWS_QUERY: User is asking for news articles, headlines, or updates on current breaking events or specific news topics.\n- IMAGE_GENERATION_QUERY: User is asking to create, draw, generate, or make a picture or image of something.\n- USER_PROFILE_QUERY: User is asking for information about a specific person (e.g., 'who is [name]?', 'tell me about [name]'), including requests for specific details, facts, lists, or analyses related to that person (e.g., 'Kiyosaki's failed predictions', 'biography of X', 'list of Y's accomplishments').\n- MESSAGE_ANALYSIS_QUERY: User is replying to another message and asking you (the bot) to analyze, summarize, or comment on that replied-to message.\n- GENERAL_CHAT: User is making a general statement, asking a general knowledge question, seeking information or analysis not fitting other specific categories (e.g. 'explain black holes', 'compare X and Y'), or engaging in casual conversation.\n- UNKNOWN_INTENT: If the intent is very unclear or doesn't fit any other category despite the broader definitions.",
@@ -129,7 +129,10 @@
     "video_translation_header": "Video translation (Russian):",
     "hint_check_quote": "Check quote?",
     "hint_check_news": "Check as news?",
-    "button_show_sources": "Sources"
+    "button_show_sources": "Sources",
+    "reaction_regenerating": "Regenerating response...",
+    "reaction_expanding": "Expanding on previous response...",
+    "reaction_summary": "Generating summary..."
   },
   "weather_conditions_map": {
     "clear_sky": "Clear sky",

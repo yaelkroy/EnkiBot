@@ -700,23 +700,47 @@ class TelegramHandlerService:
 
     async def _handle_regenerate_reaction(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle regeneration request via emoji reaction."""
+        reactor = getattr(getattr(update, "message_reaction", None), "user", None)
+        lang_code = getattr(reactor, "language_code", None)
+        if lang_code and lang_code in self.language_service.language_packs:
+            self.language_service._set_current_language_internals(lang_code)
+        else:
+            self.language_service._set_current_language_internals(self.language_service.default_language)
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="Regenerating response..."
+            text=self.language_service.get_response_string(
+                "reaction_regenerating", "Regenerating response..."
+            ),
         )
 
     async def _handle_expand_reaction(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle expansion request via emoji reaction."""
+        reactor = getattr(getattr(update, "message_reaction", None), "user", None)
+        lang_code = getattr(reactor, "language_code", None)
+        if lang_code and lang_code in self.language_service.language_packs:
+            self.language_service._set_current_language_internals(lang_code)
+        else:
+            self.language_service._set_current_language_internals(self.language_service.default_language)
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="Expanding on previous response..."
+            text=self.language_service.get_response_string(
+                "reaction_expanding", "Expanding on previous response..."
+            ),
         )
 
     async def _handle_summary_reaction(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle summarization request via emoji reaction."""
+        reactor = getattr(getattr(update, "message_reaction", None), "user", None)
+        lang_code = getattr(reactor, "language_code", None)
+        if lang_code and lang_code in self.language_service.language_packs:
+            self.language_service._set_current_language_internals(lang_code)
+        else:
+            self.language_service._set_current_language_internals(self.language_service.default_language)
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="Generating summary..."
+            text=self.language_service.get_response_string(
+                "reaction_summary", "Generating summary..."
+            ),
         )
 
     async def reaction_router(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
