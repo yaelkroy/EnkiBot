@@ -475,11 +475,28 @@ class DatabaseManager:
             commit=True,
         )
 
-    async def log_fact_check(self, chat_id: int, message_id: int, claim_text: str, verdict: str, confidence: float):
+    async def log_fact_check(
+        self,
+        chat_id: int,
+        message_id: int,
+        claim_text: str,
+        verdict: str,
+        confidence: float,
+        track: str = "news",
+    ):
         """Persist fact-check outcomes for auditing."""
         await self.execute_query(
-            "INSERT INTO FactCheckLog (ChatID, MessageID, ClaimText, Verdict, Confidence) VALUES (?, ?, ?, ?, ?)",
-            (chat_id, message_id, claim_text, verdict, confidence),
+            "INSERT INTO FactCheckLog (ChatID, MessageID, ClaimText, Verdict, Confidence, Track) VALUES (?, ?, ?, ?, ?, ?)",
+            (chat_id, message_id, claim_text, verdict, confidence, track),
+            commit=True,
+        )
+
+    async def log_fact_gate(
+        self, chat_id: int, message_id: int, p_news: float, p_book: float
+    ) -> None:
+        await self.execute_query(
+            "INSERT INTO FactGateLog (ChatID, MessageID, PNews, PBook) VALUES (?, ?, ?, ?)",
+            (chat_id, message_id, p_news, p_book),
             commit=True,
         )
 
@@ -520,8 +537,12 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "VerifiedUsers": "CREATE TABLE VerifiedUsers (UserID BIGINT PRIMARY KEY, VerifiedAt DATETIME2 DEFAULT GETDATE());",
         "ModerationLog": "CREATE TABLE ModerationLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, UserID BIGINT NULL, MessageID BIGINT NOT NULL, Categories NVARCHAR(255) NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "IX_ModerationLog_ChatID_Timestamp": "CREATE INDEX IX_ModerationLog_ChatID_Timestamp ON ModerationLog (ChatID, Timestamp DESC);",
-        "FactCheckLog": "CREATE TABLE FactCheckLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, MessageID BIGINT NULL, ClaimText NVARCHAR(MAX) NOT NULL, Verdict NVARCHAR(50) NOT NULL, Confidence FLOAT NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
+        "FactCheckLog": "CREATE TABLE FactCheckLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, MessageID BIGINT NULL, ClaimText NVARCHAR(MAX) NOT NULL, Verdict NVARCHAR(50) NOT NULL, Confidence FLOAT NOT NULL, Track NVARCHAR(8) NULL CHECK (Track IN ('news','book')), Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "IX_FactCheckLog_ChatID_Timestamp": "CREATE INDEX IX_FactCheckLog_ChatID_Timestamp ON FactCheckLog (ChatID, Timestamp DESC);",
+        "FactGateLog": "CREATE TABLE FactGateLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, MessageID BIGINT NOT NULL, PNews FLOAT NULL, PBook FLOAT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
+        "FactBookSources": "CREATE TABLE FactBookSources (id BIGINT IDENTITY PRIMARY KEY, author NVARCHAR(256) NOT NULL, title NVARCHAR(512) NOT NULL, edition NVARCHAR(128) NULL, year INT NULL, isbn NVARCHAR(32) NULL, translator NVARCHAR(256) NULL, source_url NVARCHAR(1024) NULL, snapshot_url NVARCHAR(1024) NULL, first_seen DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME());",
+        "FactBookMatches": "CREATE TABLE FactBookMatches (match_id BIGINT IDENTITY PRIMARY KEY, run_id BIGINT NOT NULL, book_source_id BIGINT NULL, quote_exact NVARCHAR(MAX) NULL, quote_lang NVARCHAR(8) NULL, page NVARCHAR(32) NULL, chapter NVARCHAR(64) NULL, stance NVARCHAR(12) NULL, score FLOAT NULL);",
+        "IX_FactBookMatches_Run": "CREATE INDEX IX_FactBookMatches_Run ON FactBookMatches(run_id);",
         # ------------------------------------------------------------------
         # Advanced karma system tables
         # ------------------------------------------------------------------

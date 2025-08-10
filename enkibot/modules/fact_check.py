@@ -83,6 +83,7 @@ class Evidence:
     snapshot_url: Optional[str]
     tier: Optional[int]
     score: float
+    book: Optional["BookInfo"] = None
 
 
 @dataclass
@@ -106,6 +107,32 @@ class SatireDecision:
     p_satire: float
     decision: str  # satire|ambiguous|news
     rationale: Dict[str, object]
+
+
+@dataclass
+class BookInfo:
+    """Book metadata associated with an evidence item."""
+
+    author: str
+    title: str
+    edition: Optional[str] = None
+    year: Optional[int] = None
+    isbn: Optional[str] = None
+    page: Optional[str] = None
+    chapter: Optional[str] = None
+    translator: Optional[str] = None
+    quote_exact: Optional[str] = None
+
+
+@dataclass
+class Quote:
+    """Represents a book quote to verify."""
+
+    quote: str
+    author: Optional[str]
+    title: Optional[str]
+    lang: Optional[str]
+    hash: str
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +315,34 @@ class NewsGate:
         return self._classifier(text_l)
 
 
+class QuoteGate:
+    """Simple detector for book-like quotations."""
+
+    def __init__(self) -> None:
+        self.quote_re = re.compile(r"[\"«].{8,}[\"»]")
+        self.marker_keywords = [
+            "как писал",
+            "as",
+            "wrote",
+            "писал",
+            "said",
+            "\u2014",  # em dash
+        ]
+
+    async def predict(self, text: str) -> float:
+        score = 0.0
+        if self.quote_re.search(text):
+            score += 0.5
+        text_l = text.lower()
+        if any(k in text_l for k in self.marker_keywords):
+            score += 0.3
+        if re.search(r"\b\d{4}\b", text_l):
+            score += 0.1
+        if "\n" in text:
+            score += 0.1
+        return min(score, 1.0)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -334,6 +389,22 @@ class FactChecker:
             hash=hash_claim(text_norm, urls),
         )
 
+    async def extract_quote(self, text: str) -> Optional[Quote]:
+        """Extract a quotation and optional attribution."""
+        m = re.search(r"[\"«](.+?)[\"»](?:\s*[\u2014\-]\s*([^\n]+))?", text, re.S)
+        if not m:
+            return None
+        quote = normalize_text(m.group(1))
+        author = title = None
+        if m.group(2):
+            parts = [p.strip() for p in re.split(r",|\u2014|-", m.group(2), maxsplit=1) if p.strip()]
+            if parts:
+                author = parts[0]
+                if len(parts) > 1:
+                    title = parts[1]
+        h = hashlib.sha256(quote.lower().encode("utf-8")).hexdigest()
+        return Quote(quote=quote, author=author, title=title, lang=None, hash=h)
+
     async def _llm_verdict(self, claim: Claim) -> Verdict:
         """Use LLM to generate a verdict for the claim."""
         if not self.llm_services:
@@ -377,8 +448,54 @@ class FactChecker:
 
         return Verdict(label=label, confidence=confidence, summary=summary, sources=[])
 
-    async def research(self, claim: Claim) -> Verdict:
-        return await self._llm_verdict(claim)
+    async def _llm_quote_verdict(self, quote: Quote) -> Verdict:
+        """Verify a book quotation using an LLM stub."""
+        if not self.llm_services:
+            return Verdict(
+                label="unverified",
+                confidence=0.0,
+                summary="LLM service unavailable.",
+                sources=[],
+            )
+
+        system_prompt = (
+            "You verify literary quotations. Determine if the provided quote is "
+            "accurate and correctly attributed. Respond with a JSON object "
+            "containing keys 'label' (accurate|misquote|misattrib|unverified), "
+            "'confidence' (0-1) and 'summary'."
+        )
+        user_prompt = f"Quote: \"{quote.quote}\"\nAuthor: {quote.author or 'unknown'}\nTitle: {quote.title or 'unknown'}"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        try:
+            completion = await self.llm_services.call_openai_llm(
+                messages, temperature=0.0, max_tokens=300
+            )
+        except Exception as e:
+            logger.error(f"LLM quote-check failed: {e}", exc_info=True)
+            completion = None
+
+        label = "unverified"
+        confidence = 0.0
+        summary = "No analysis available."
+        if completion:
+            try:
+                data = json.loads(completion)
+                label = data.get("label", label)
+                confidence = float(data.get("confidence", 0.0))
+                summary = data.get("summary", summary)
+            except Exception:
+                summary = completion.strip()
+
+        return Verdict(label=label, confidence=confidence, summary=summary, sources=[])
+
+    async def research(self, claim: Claim | Quote, track: str = "news") -> Verdict:
+        if track == "book":
+            return await self._llm_quote_verdict(claim)  # type: ignore[arg-type]
+        return await self._llm_verdict(claim)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -394,6 +511,7 @@ class FactCheckBot:
         fc: FactChecker,
         satire_detector: Optional[SatireDetector] = None,
         news_gate: Optional[NewsGate] = None,
+        quote_gate: Optional[QuoteGate] = None,
         cfg_reader: Callable[[int], Dict[str, object]] | None = None,
         db_manager: Optional[DatabaseManager] = None,
     ) -> None:
@@ -401,6 +519,7 @@ class FactCheckBot:
         self.fc = fc
         self.satire = satire_detector or SatireDetector(lambda _chat_id: {})
         self.news_gate = news_gate or NewsGate()
+        self.quote_gate = quote_gate or QuoteGate()
         self.cfg_reader = cfg_reader or (lambda _chat_id: {})
         self.db_manager = db_manager
 
@@ -451,12 +570,29 @@ class FactCheckBot:
                 return
         if cfg.get("auto", {}).get("auto_check_news", True):
             p_news = await self.news_gate.predict(text)
-            if p_news < 0.55:
+            p_book = await self.quote_gate.predict(text)
+            if self.db_manager and update.effective_chat:
+                try:
+                    await self.db_manager.log_fact_gate(
+                        update.effective_chat.id,
+                        update.effective_message.message_id,
+                        p_news,
+                        p_book,
+                    )
+                except Exception:
+                    pass
+            if p_book >= 0.70:
+                await self._run_check(update, ctx, text, track="book")
                 return
-            if p_news < 0.70:
-                await self._show_author_only_hint(update, ctx)
+            if p_news >= 0.70:
+                await self._run_check(update, ctx, text, track="news")
                 return
-            await self._run_check(update, ctx, text)
+            if p_book >= 0.55:
+                await self._show_author_only_hint(update, ctx, "Check quote?", "book")
+                return
+            if p_news >= 0.55:
+                await self._show_author_only_hint(update, ctx, "Check as news?", "news")
+                return
 
     async def cmd_factcheck(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if update.effective_message.reply_to_message:
@@ -471,14 +607,18 @@ class FactCheckBot:
         ctx: ContextTypes.DEFAULT_TYPE,
         text: str,
         message: Optional[Message] = None,
+        track: str = "news",
     ) -> None:
         """Run a fact check and react to the target message."""
 
-        claim = await self.fc.extract_claim(text)
+        if track == "book":
+            claim = await self.fc.extract_quote(text)
+        else:
+            claim = await self.fc.extract_claim(text)
         if not claim:
             return
 
-        verdict = await self.fc.research(claim)
+        verdict = await self.fc.research(claim, track=track)
 
         target_msg = message or update.effective_message
         if self.db_manager and update.effective_chat and target_msg:
@@ -486,9 +626,10 @@ class FactCheckBot:
                 await self.db_manager.log_fact_check(
                     update.effective_chat.id,
                     target_msg.message_id,
-                    claim.text_orig,
+                    getattr(claim, "text_orig", getattr(claim, "quote", "")),
                     verdict.label,
                     verdict.confidence,
+                    track,
                 )
             except Exception as e:
                 logger.error(f"Failed to log fact check: {e}", exc_info=True)
@@ -521,14 +662,14 @@ class FactCheckBot:
         return ""
 
     async def _show_author_only_hint(
-        self, update: Update, ctx: ContextTypes.DEFAULT_TYPE
+        self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, hint: str, track: str
     ) -> None:
         """Send a small hint to the original forwarder only."""
         kb = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Check as news?", callback_data="FC:GATE:CHECK")]]
+            [[InlineKeyboardButton(hint, callback_data=f"FC:GATE:CHECK:{track}")]]
         )
         try:
-            await ctx.bot.send_message(update.effective_user.id, "Check as news?", reply_markup=kb)
+            await ctx.bot.send_message(update.effective_user.id, hint, reply_markup=kb)
         except Exception:  # pragma: no cover - best effort
             pass
 
@@ -590,10 +731,14 @@ class FactCheckBot:
             else:
                 await q.edit_message_text("Nothing to check.")
             return
-        if data == "FC:GATE:CHECK":
-            text = (q.message.text or "").replace("\n\nCheck as news?", "").strip()
+        if data.startswith("FC:GATE:CHECK"):
+            parts = data.split(":")
+            track = parts[3] if len(parts) > 3 else "news"
+            text = (q.message.text or "").replace(
+                "\n\nCheck quote?", "").replace("\n\nCheck as news?", ""
+            ).strip()
             await q.edit_message_text("Checking…")
-            await self._run_check(update, ctx, text)
+            await self._run_check(update, ctx, text, track=track)
             return
         await q.edit_message_text("Config updated (stub).")
 
