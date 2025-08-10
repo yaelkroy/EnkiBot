@@ -890,6 +890,9 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         with conn.cursor() as cursor:
             logger.info("Initializing database tables...")
             for name, query in table_queries.items():
+                # Some queries are defined as tuples for readability; join them into a single string.
+                query_str = " ".join(query) if isinstance(query, (tuple, list)) else query
+
                 is_idx = name.startswith("IX_")
                 obj_type = "INDEX" if is_idx else "TABLE"
                 obj_name_to_check = name  # For tables, this is the table name. For indexes, this is the index name.
@@ -898,7 +901,7 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
                     # Extract table name from the CREATE INDEX statement.
                     # Use a word boundary before 'ON' so we don't match strings like
                     # 'NameVariation ON'.
-                    match = re.search(r"\bON\s+([\w\.]+)", query, re.IGNORECASE)
+                    match = re.search(r"\bON\s+([\w\.]+)", query_str, re.IGNORECASE)
                     if match:
                         table_for_index = match.group(1)
                     else:
@@ -920,7 +923,7 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
                     logger.info(f"{obj_type} '{obj_name_to_check}' already exists.")
                 else:
                     logger.info(f"{obj_type} '{obj_name_to_check}' not found. Creating...")
-                    cursor.execute(query)
+                    cursor.execute(query_str)
                     logger.info(f"{obj_type} '{obj_name_to_check}' created.")
 
             # Ensure karma-related columns exist on UserProfiles for backwards compatibility
