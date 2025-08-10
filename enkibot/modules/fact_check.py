@@ -52,6 +52,7 @@ import json
 import openai
 from .. import config
 from ..utils.database import DatabaseManager
+from ..utils.lang_router import normalize as normalize_unicode
 
 if TYPE_CHECKING:  # pragma: no cover - only for type hints
     from .primary_source_hunter import PrimarySourceHunter, SourceHit
@@ -359,6 +360,8 @@ URL_RE = re.compile(r"https?://\S+", re.I)
 
 
 def normalize_text(s: str) -> str:
+    """Apply Unicode normalization and collapse whitespace."""
+    s = normalize_unicode(s)
     return re.sub(r"\s+", " ", s).strip()
 
 
