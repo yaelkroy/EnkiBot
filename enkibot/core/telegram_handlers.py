@@ -73,6 +73,7 @@ from .intent_handlers.news_handler import NewsIntentHandler
 from .intent_handlers.general_handler import GeneralIntentHandler
 from .intent_handlers.image_generation_handler import ImageGenerationIntentHandler
 from enkibot.modules.spam_detector import SpamDetector
+from enkibot.utils.message_utils import is_forwarded_message
 
 logger = logging.getLogger(__name__)
 
@@ -709,15 +710,7 @@ class TelegramHandlerService:
         if len(cleaned_question) < 5: 
             question_for_analysis = self.language_service.get_response_string("replied_message_default_question")
         
-        is_forwarded = bool(
-            getattr(original_msg, "forward_from", None)
-            or getattr(original_msg, "forward_from_chat", None)
-            or getattr(original_msg, "forward_sender_name", None)
-            or getattr(original_msg, "forward_date", None)
-            or getattr(original_msg, "forward_origin", None)
-            or getattr(original_msg, "is_automatic_forward", False)
-        )
-        if is_forwarded:
+        if is_forwarded_message(original_msg):
             analyzer_prompts = self.language_service.get_llm_prompt_set("forwarded_news_fact_checker")
             if not (analyzer_prompts and "system" in analyzer_prompts):
                 logger.error("Prompt set for forwarded news fact-check is missing or malformed.")
