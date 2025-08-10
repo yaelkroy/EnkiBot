@@ -125,6 +125,7 @@ class LLMServices:
             return None
         actual_model_id = model_id or self.openai_model_id
         logger.info(f"Calling OpenAI (model: {actual_model_id}) with {len(messages)} messages.")
+        logger.debug(f"OpenAI messages: {messages}")
         call_params = { "model": actual_model_id, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, **kwargs }
         try:
             start = time.perf_counter()
@@ -134,6 +135,7 @@ class LLMServices:
             if getattr(completion, "usage", None):
                 tokens = getattr(completion.usage, "total_tokens", 0)
             self._record_metrics("OpenAI", latency, tokens)
+            logger.debug(f"OpenAI raw response: {completion}")
             if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
                 return completion.choices[0].message.content.strip()
             logger.warning(f"OpenAI call to {actual_model_id} returned no content or unexpected structure.")

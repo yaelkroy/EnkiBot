@@ -34,9 +34,14 @@
 # ==================================================================================================
 import logging
 import re
-import pyodbc
 from typing import List, Dict, Any, Optional
 from datetime import date
+from types import SimpleNamespace
+
+try:  # pragma: no cover - optional dependency
+    import pyodbc
+except Exception:  # pragma: no cover
+    pyodbc = SimpleNamespace(Error=Exception)
 
 from enkibot import config # For DB_CONNECTION_STRING
 
@@ -48,8 +53,10 @@ class DatabaseManager:
         if not self.connection_string:
             logger.warning("Database connection string is not configured. Database operations will be disabled.")
 
-    def get_db_connection(self) -> Optional[pyodbc.Connection]:
-        if not self.connection_string: return None
+    def get_db_connection(self) -> Optional[Any]:
+        if not self.connection_string or not hasattr(pyodbc, "connect"):
+            logger.warning("Database connection unavailable: missing connection string or pyodbc.")
+            return None
         try:
             conn = pyodbc.connect(self.connection_string, autocommit=False)
             logger.debug("Database connection established.")
@@ -518,34 +525,37 @@ class DatabaseManager:
         verdict: str,
         confidence: float,
         track: str = "news",
+        details: Optional[str] = None,
     ):
         """Persist fact-check outcomes for auditing.
 
-        Some deployments may still use an older ``FactCheckLog`` schema
-        without the ``Track`` column.  We check for the column's existence
-        before inserting to maintain backward compatibility.
+        Handles optional ``Track`` and ``Details`` columns for backward
+        compatibility.
         """
 
-        # Detect if the optional 'Track' column exists in the database
-        column_exists = await self.execute_query(
+        columns = ["ChatID", "MessageID", "ClaimText", "Verdict", "Confidence"]
+        params: List[Any] = [chat_id, message_id, claim_text, verdict, confidence]
+
+        track_exists = await self.execute_query(
             "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'FactCheckLog' AND COLUMN_NAME = 'Track'",
             fetch_one=True,
         )
+        if track_exists:
+            columns.append("Track")
+            params.append(track)
 
-        if column_exists:
-            query = (
-                "INSERT INTO FactCheckLog (ChatID, MessageID, ClaimText, Verdict, Confidence, Track) "
-                "VALUES (?, ?, ?, ?, ?, ?)"
-            )
-            params = (chat_id, message_id, claim_text, verdict, confidence, track)
-        else:
-            query = (
-                "INSERT INTO FactCheckLog (ChatID, MessageID, ClaimText, Verdict, Confidence) "
-                "VALUES (?, ?, ?, ?, ?)"
-            )
-            params = (chat_id, message_id, claim_text, verdict, confidence)
+        details_exists = await self.execute_query(
+            "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'FactCheckLog' AND COLUMN_NAME = 'Details'",
+            fetch_one=True,
+        )
+        if details_exists:
+            columns.append("Details")
+            params.append(details)
 
-        await self.execute_query(query, params, commit=True)
+        placeholders = ", ".join(["?"] * len(params))
+        query = f"INSERT INTO FactCheckLog ({', '.join(columns)}) VALUES ({placeholders})"
+
+        await self.execute_query(query, tuple(params), commit=True)
 
     async def log_fact_gate(
         self, chat_id: int, message_id: int, p_news: float, p_book: float
@@ -716,7 +726,7 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "VerifiedUsers": "CREATE TABLE VerifiedUsers (UserID BIGINT PRIMARY KEY, VerifiedAt DATETIME2 DEFAULT GETDATE());",
         "ModerationLog": "CREATE TABLE ModerationLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, UserID BIGINT NULL, MessageID BIGINT NOT NULL, Categories NVARCHAR(255) NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "IX_ModerationLog_ChatID_Timestamp": "CREATE INDEX IX_ModerationLog_ChatID_Timestamp ON ModerationLog (ChatID, Timestamp DESC);",
-        "FactCheckLog": "CREATE TABLE FactCheckLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, MessageID BIGINT NULL, ClaimText NVARCHAR(MAX) NOT NULL, Verdict NVARCHAR(50) NOT NULL, Confidence FLOAT NOT NULL, Track NVARCHAR(8) NULL CHECK (Track IN ('news','book')), Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
+        "FactCheckLog": "CREATE TABLE FactCheckLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, MessageID BIGINT NULL, ClaimText NVARCHAR(MAX) NOT NULL, Verdict NVARCHAR(50) NOT NULL, Confidence FLOAT NOT NULL, Track NVARCHAR(8) NULL CHECK (Track IN ('news','book')), Details NVARCHAR(MAX) NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "IX_FactCheckLog_ChatID_Timestamp": "CREATE INDEX IX_FactCheckLog_ChatID_Timestamp ON FactCheckLog (ChatID, Timestamp DESC);",
         "FactGateLog": "CREATE TABLE FactGateLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, MessageID BIGINT NOT NULL, PNews FLOAT NULL, PBook FLOAT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "assistant_invocations": (
