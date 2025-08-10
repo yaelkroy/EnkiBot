@@ -31,6 +31,7 @@ from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 
 from enkibot.utils.message_utils import is_forwarded_message
+from enkibot.utils.quota_middleware import enforce_user_quota
 
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
@@ -65,6 +66,9 @@ class GeneralIntentHandler:
             return
 
         logger.info(f"GeneralIntentHandler: Handling intent '{master_intent}' for: '{user_msg_txt[:70]}...'")
+        if not await enforce_user_quota(self.response_generator.db_manager, update.effective_user.id, "llm"):
+            await update.message.reply_text(self.language_service.get_response_string("llm_quota_exceeded"))
+            return
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
         if is_forwarded_message(update.message):

@@ -111,6 +111,8 @@
     "analysis_error": "Sorry, an error occurred during the text analysis.",
     "analysis_client_not_configured": "The analysis function cannot be performed as the AI client is not configured.",
     "conversation_cancelled": "Okay, the current operation has been cancelled.",
+    "llm_quota_exceeded": "You've reached your daily limit for AI responses. Please try again tomorrow.",
+    "image_quota_exceeded": "You've reached your daily image generation limit. Please try again tomorrow.",
     "image_generation_start": "On it! Imagining something for you...",
     "image_generation_error": "Sorry, I hit a snag and couldn't create your image. Please try again.",
     "image_generation_no_prompt": "I see you want an image, but I'm not sure what you want me to create. Could you please describe it?",

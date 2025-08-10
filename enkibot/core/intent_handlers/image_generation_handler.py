@@ -32,26 +32,34 @@ from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 
 from enkibot import config # Import config directly
+from enkibot.utils.quota_middleware import enforce_user_quota
 
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
     from enkibot.modules.intent_recognizer import IntentRecognizer
     from enkibot.core.llm_services import LLMServices
+    from enkibot.utils.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
 class ImageGenerationIntentHandler:
-    def __init__(self, 
-                 language_service: 'LanguageService', 
+    def __init__(self,
+                 language_service: 'LanguageService',
                  intent_recognizer: 'IntentRecognizer',
-                 llm_services: 'LLMServices'):
+                 llm_services: 'LLMServices',
+                 db_manager: 'DatabaseManager'):
         logger.info("ImageGenerationIntentHandler initialized.")
         self.language_service = language_service
         self.intent_recognizer = intent_recognizer
         self.llm_services = llm_services
+        self.db_manager = db_manager
 
     async def handle_intent(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt: str) -> None:
-        if not update.message or not update.effective_chat:
+        if not update.message or not update.effective_chat or not update.effective_user:
+            return
+
+        if not await enforce_user_quota(self.db_manager, update.effective_user.id, "image"):
+            await update.message.reply_text(self.language_service.get_response_string("image_quota_exceeded"))
             return
 
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)

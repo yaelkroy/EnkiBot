@@ -155,7 +155,8 @@ class TelegramHandlerService:
         self.image_generation_handler = ImageGenerationIntentHandler(
             language_service=self.language_service,
             intent_recognizer=self.intent_recognizer,
-            llm_services=self.llm_services
+            llm_services=self.llm_services,
+            db_manager=self.db_manager
         )
         logger.info("TelegramHandlerService __init__ COMPLETED")
 
