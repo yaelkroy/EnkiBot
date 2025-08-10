@@ -167,6 +167,20 @@ class SpamDetector(BaseModule):
                 logger.debug("Detected message language: %s", detected_lang)
             except Exception as e:
                 logger.error("Language detection failed: %s", e)
+
+        # Skip moderation for messages explicitly addressed to the bot
+        text_lower = text.lower()
+        bot_username_lower = (
+            getattr(context.bot, "username", "").lower() if getattr(context.bot, "username", None) else ""
+        )
+        tokens = re.findall(r"\w+", text_lower, flags=re.UNICODE)
+        is_direct_query = False
+        if bot_username_lower and f"@{bot_username_lower}" in text_lower:
+            is_direct_query = True
+        elif any(nick.lower() in tokens for nick in bot_config.BOT_NICKNAMES_TO_CHECK):
+            is_direct_query = True
+        if is_direct_query:
+            return False
         key = (chat_id, user.id)
         state = self.user_states.get(key)
         if state is None:
