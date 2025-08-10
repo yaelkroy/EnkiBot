@@ -30,6 +30,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 
+from enkibot.utils.message_utils import is_forwarded_message
+
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
     from enkibot.modules.response_generator import ResponseGenerator
@@ -65,15 +67,7 @@ class GeneralIntentHandler:
         logger.info(f"GeneralIntentHandler: Handling intent '{master_intent}' for: '{user_msg_txt[:70]}...'")
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
-        is_forwarded = bool(
-            getattr(update.message, "forward_from", None)
-            or getattr(update.message, "forward_from_chat", None)
-            or getattr(update.message, "forward_sender_name", None)
-            or getattr(update.message, "forward_date", None)
-            or getattr(update.message, "forward_origin", None)
-            or getattr(update.message, "is_automatic_forward", False)
-        )
-        if is_forwarded:
+        if is_forwarded_message(update.message):
             analyzer_prompts = self.language_service.get_llm_prompt_set("forwarded_news_fact_checker")
             if analyzer_prompts and "system" in analyzer_prompts:
                 forwarded_text = update.message.text or update.message.caption or ""
