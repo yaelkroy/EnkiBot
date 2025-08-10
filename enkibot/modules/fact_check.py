@@ -328,7 +328,9 @@ class QuoteGate:
     """Simple detector for book-like quotations."""
 
     def __init__(self) -> None:
-        self.quote_re = re.compile(r"[\"«].{8,}[\"»]")
+        # Require at least two words inside the quotes so short single-word
+        # phrases like "«Силовики»" do not trigger quote checking.
+        self.quote_re = re.compile(r"[\"«](?:(?![\"»]).)*\s+(?:(?![\"»]).)+[\"»]")
         self.marker_keywords = [
             "как писал",
             "as",
@@ -340,6 +342,9 @@ class QuoteGate:
 
     async def predict(self, text: str) -> float:
         score = 0.0
+        # Only consider it a potential literary quote if there is a quoted
+        # passage with at least one space character inside. This avoids
+        # flagging single-word quotations that often appear in news articles.
         if self.quote_re.search(text):
             score += 0.5
         text_l = text.lower()
@@ -408,6 +413,11 @@ class FactChecker:
         if not m:
             return None
         quote = normalize_text(m.group(1))
+        # Ignore short single-word "quotes" often used for emphasis in news
+        # articles. Only treat the text as a literary quotation if it contains
+        # at least one space (i.e. two or more words).
+        if " " not in quote:
+            return None
         author = title = None
         if m.group(2):
             parts = [p.strip() for p in re.split(r",|\u2014|-", m.group(2), maxsplit=1) if p.strip()]

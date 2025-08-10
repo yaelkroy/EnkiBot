@@ -304,10 +304,17 @@ class LanguageService:
             logger.info(f"LLM confidently detected primary lang '{llm_detected_primary_lang}' (conf: {llm_detected_confidence:.2f}).")
             final_candidate_lang_code = llm_detected_primary_lang
         else:
-            if llm_detected_primary_lang: 
+            if llm_detected_primary_lang:
                  logger.warning(f"LLM detected lang '{llm_detected_primary_lang}' but confidence ({llm_detected_confidence:.2f}) "
                                f"< threshold ({LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD}). Using current/default: {final_candidate_lang_code}")
-            # If no LLM detection or low confidence, final_candidate_lang_code remains as initialized (current or default)
+            # If no LLM detection or low confidence, use simple heuristics based
+            # on the characters present in the message. This ensures languages
+            # like Russian are still recognised even when the LLM is
+            # unavailable.
+            if re.search(r"[\u0400-\u04FF]", aggregated_text_for_llm_prompt_check):
+                final_candidate_lang_code = "ru"
+            elif re.search(r"[A-Za-z]", aggregated_text_for_llm_prompt_check):
+                final_candidate_lang_code = "en"
 
         unsupported_codes = ("", "und", "undefined", "none")
         if final_candidate_lang_code in unsupported_codes:
