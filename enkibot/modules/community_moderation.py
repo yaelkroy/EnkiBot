@@ -37,6 +37,8 @@ from telegram import (
 )
 from telegram.ext import ContextTypes
 
+from enkibot.core.language_service import LanguageService
+
 
 # ---------------------------------------------------------------------------
 # Constants and simple helpers
@@ -53,14 +55,7 @@ THRESH_PERMABAN = 7.0
 
 TEMPBAN_HOURS = 24
 
-REASON_CHOICES = [
-    ("spam", "Spam/Ads"),
-    ("scam", "Scam/Phishing"),
-    ("nsfw", "NSFW"),
-    ("hate", "Hate/Harassment"),
-    ("offtopic", "Off-topic"),
-    ("other", "Other"),
-]
+REASON_CODES = ["spam", "scam", "nsfw", "hate", "offtopic", "other"]
 
 
 def now() -> datetime:
@@ -82,7 +77,8 @@ class Case:
 class CommunityModerationService:
     """Minimal community moderation manager."""
 
-    def __init__(self, admin_chat_id: Optional[int] = None) -> None:
+    def __init__(self, language_service: LanguageService, admin_chat_id: Optional[int] = None) -> None:
+        self.language_service = language_service
         self.admin_chat_id = admin_chat_id
         self.cases: Dict[int, Case] = {}
         self.case_index: Dict[Tuple[int, int, int], int] = {}
@@ -133,13 +129,13 @@ class CommunityModerationService:
             st["joined_ts"] = joined_ts
         if now() - joined_ts < timedelta(hours=MIN_CHAT_TENURE_HOURS):
             self.mem_state[key] = st
-            return False, "You need more time in this chat before voting."
+            return False, self.language_service.get_response_string("community_vote_need_more_time")
 
         votes = [t for t in st.get("votes", []) if now() - t < timedelta(days=1)]
         if len(votes) >= VOTE_LIMIT_PER_DAY:
             st["votes"] = votes
             self.mem_state[key] = st
-            return False, "Daily vote limit reached."
+            return False, self.language_service.get_response_string("community_vote_daily_limit")
         st["votes"] = votes
         self.mem_state[key] = st
         return True, ""
@@ -210,14 +206,24 @@ class CommunityModerationService:
     # ------------------------------------------------------------------
     async def cmd_report(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.message.reply_to_message:
-            await update.effective_message.reply_text("Reply to a message with /report to report it.")
+            await update.effective_message.reply_text(
+                self.language_service.get_response_string("community_report_reply_prompt")
+            )
             return
         buttons = [
-            [InlineKeyboardButton(lbl, callback_data=f"REPORT:{code}:{update.message.reply_to_message.message_id}")]
-            for code, lbl in REASON_CHOICES
+            [
+                InlineKeyboardButton(
+                    self.language_service.get_response_string(f"report_reason_{code}"),
+                    callback_data=f"REPORT:{code}:{update.message.reply_to_message.message_id}",
+                )
+            ]
+            for code in REASON_CODES
         ]
         kb = InlineKeyboardMarkup(buttons)
-        await update.effective_message.reply_text("Choose a reason to report:", reply_markup=kb)
+        await update.effective_message.reply_text(
+            self.language_service.get_response_string("community_report_choose_reason"),
+            reply_markup=kb,
+        )
 
     async def on_report_reason(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         q = update.callback_query
@@ -241,17 +247,23 @@ class CommunityModerationService:
         except Exception:
             target_id = None
         if not target_id:
-            await q.edit_message_text("Could not identify target user.")
+            await q.edit_message_text(
+                self.language_service.get_response_string("community_report_target_missing")
+            )
             return
 
         case = self._get_or_open_case(chat.id, target_id, msg_id, reason)
         if self._already_voted(case, user.id):
-            await q.edit_message_text("You already reported this case.")
+            await q.edit_message_text(
+                self.language_service.get_response_string("community_report_already")
+            )
             return
         self._add_vote(case, user.id, base=1.0)
         self._record_vote_usage(update)
         score = self._effective_score(case)
-        await q.edit_message_text("Thanks, the moderators have been notified.")
+        await q.edit_message_text(
+            self.language_service.get_response_string("community_report_thanks")
+        )
         await self._apply_decision(context, case, score, msg_id)
         if self.admin_chat_id:
             try:
@@ -264,12 +276,16 @@ class CommunityModerationService:
 
     async def cmd_vote(self, update: Update, context: ContextTypes.DEFAULT_TYPE, reason: str = "spam") -> None:
         if not update.message or not update.message.reply_to_message:
-            await update.effective_message.reply_text("Reply to the offending message with /spam.")
+            await update.effective_message.reply_text(
+                self.language_service.get_response_string("community_vote_reply_prompt")
+            )
             return
         voter = update.effective_user
         target = update.message.reply_to_message.from_user
         if voter.id == target.id:
-            await update.effective_message.reply_text("You cannot vote on yourself.")
+            await update.effective_message.reply_text(
+                self.language_service.get_response_string("community_vote_self_vote")
+            )
             return
 
         ok, why = self._eligible_to_vote(update)
@@ -279,12 +295,16 @@ class CommunityModerationService:
 
         case = self._get_or_open_case(update.effective_chat.id, target.id, update.message.reply_to_message.message_id, reason)
         if self._already_voted(case, voter.id):
-            await update.effective_message.reply_text("You already voted on this case.")
+            await update.effective_message.reply_text(
+                self.language_service.get_response_string("community_vote_already")
+            )
             return
         w = self._add_vote(case, voter.id, base=1.0)
         self._record_vote_usage(update)
         score = self._effective_score(case)
-        await update.effective_message.reply_text("Vote recorded. Mods notified.")
+        await update.effective_message.reply_text(
+            self.language_service.get_response_string("community_vote_recorded")
+        )
         await self._apply_decision(context, case, score, update.message.reply_to_message.message_id)
         if self.admin_chat_id:
             try:

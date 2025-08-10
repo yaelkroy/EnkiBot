@@ -656,13 +656,20 @@ class TelegramHandlerService:
                 try:
                     await update.message.delete()
                     if update.effective_user:
+                        text = self.language_service.get_response_string(
+                            "nsfw_image_removed_user",
+                            user=update.effective_user.mention_html(),
+                        )
                         await context.bot.send_message(
                             chat_id,
-                            f"\uD83D\uDEAB Removed an NSFW image from {update.effective_user.mention_html()}.",
-                            parse_mode='HTML'
+                            text,
+                            parse_mode='HTML',
                         )
                     else:
-                        await context.bot.send_message(chat_id, "\uD83D\uDEAB Removed an NSFW image.")
+                        text = self.language_service.get_response_string(
+                            "nsfw_image_removed_chat"
+                        )
+                        await context.bot.send_message(chat_id, text)
                 except Exception as e:
                     logger.error(f"Error deleting NSFW image: {e}", exc_info=True)
         finally:
@@ -1393,12 +1400,19 @@ class TelegramHandlerService:
         if not await self._is_user_admin(chat_id, user_id, context):
             return
         if not context.args or context.args[0].lower() not in ("on", "off"):
-            await update.message.reply_text("Usage: /toggle_nsfw <on|off>")
+            await update.message.reply_text(
+                self.language_service.get_response_string("toggle_nsfw_usage")
+            )
             return
         enabled = context.args[0].lower() == "on"
         await self.db_manager.set_nsfw_filter_enabled(chat_id, enabled)
-        status = "enabled" if enabled else "disabled"
-        await update.message.reply_text(f"NSFW filter {status} for this chat.")
+        status_key = "enabled" if enabled else "disabled"
+        status_txt = self.language_service.get_response_string(f"status_{status_key}")
+        await update.message.reply_text(
+            self.language_service.get_response_string(
+                "nsfw_filter_status", status=status_txt
+            )
+        )
 
     async def set_nsfw_threshold_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.effective_user:
@@ -1408,16 +1422,24 @@ class TelegramHandlerService:
         if not await self._is_user_admin(chat_id, user_id, context):
             return
         if not context.args:
-            await update.message.reply_text("Usage: /nsfw_threshold <0.0-1.0>")
+            await update.message.reply_text(
+                self.language_service.get_response_string("nsfw_threshold_usage")
+            )
             return
         try:
             threshold = float(context.args[0])
         except ValueError:
-            await update.message.reply_text("Threshold must be a number between 0 and 1.")
+            await update.message.reply_text(
+                self.language_service.get_response_string("nsfw_threshold_must_number")
+            )
             return
         threshold = max(0.0, min(1.0, threshold))
         await self.db_manager.set_nsfw_threshold(chat_id, threshold)
-        await update.message.reply_text(f"NSFW threshold set to {threshold:.2f} for this chat.")
+        await update.message.reply_text(
+            self.language_service.get_response_string(
+                "nsfw_threshold_set", threshold=threshold
+            )
+        )
 
     async def set_spam_threshold_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.effective_user:
@@ -1431,11 +1453,17 @@ class TelegramHandlerService:
         except Exception:
             return
         if not context.args or not context.args[0].isdigit():
-            await update.message.reply_text("Usage: /setspamthreshold <number>")
+            await update.message.reply_text(
+                self.language_service.get_response_string("set_spam_threshold_usage")
+            )
             return
         threshold = int(context.args[0])
         await self.db_manager.set_spam_vote_threshold(chat_id, threshold)
-        await update.message.reply_text(f"Spam vote threshold set to {threshold}.")
+        await update.message.reply_text(
+            self.language_service.get_response_string(
+                "spam_threshold_set", threshold=threshold
+            )
+        )
 
     async def push_default_commands(self) -> None:
         """Registers global default slash commands."""
