@@ -186,7 +186,8 @@ class TelegramHandlerService:
         if self.allowed_group_ids and current_chat_id not in self.allowed_group_ids: return False
         bot_username_lower = getattr(context.bot, 'username', "").lower() if getattr(context.bot, 'username', None) else ""
         is_at_mentioned = bool(bot_username_lower and f"@{bot_username_lower}" in user_msg_txt_lower)
-        is_nickname_mentioned = any(re.search(r'\b' + re.escape(nick.lower()) + r'\b', user_msg_txt_lower, re.I) for nick in self.bot_nicknames)
+        tokens = re.findall(r'\w+', user_msg_txt_lower, flags=re.UNICODE)
+        is_nickname_mentioned = any(nick.lower() in tokens for nick in self.bot_nicknames)
         is_bot_mentioned = is_at_mentioned or is_nickname_mentioned
         is_reply_to_bot = (update.message.reply_to_message and update.message.reply_to_message.from_user and context.bot and update.message.reply_to_message.from_user.id == context.bot.id)
         final_trigger_decision = is_bot_mentioned or is_reply_to_bot
