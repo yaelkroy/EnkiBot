@@ -33,6 +33,7 @@
 # === EnkiBot Database Utilities ===
 # ==================================================================================================
 import logging
+import re
 import pyodbc
 from typing import List, Dict, Any, Optional
 from datetime import date
@@ -629,10 +630,10 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
                 obj_name_to_check = name  # For tables, this is the table name. For indexes, this is the index name.
                 table_for_index = ""
                 if is_idx:
-                    # Attempt to parse table name from index name, e.g., IX_TableName_Column -> TableName
-                    parts = name.split('_')
-                    if len(parts) > 1:
-                        table_for_index = parts[1]  # This is a heuristic
+                    # Extract table name from the CREATE INDEX statement
+                    match = re.search(r"ON\s+([\w\.]+)", query, re.IGNORECASE)
+                    if match:
+                        table_for_index = match.group(1)
                     else:
                         logger.warning(f"Could not determine table for index {name}")
                         continue
