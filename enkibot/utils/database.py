@@ -630,8 +630,10 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
                 obj_name_to_check = name  # For tables, this is the table name. For indexes, this is the index name.
                 table_for_index = ""
                 if is_idx:
-                    # Extract table name from the CREATE INDEX statement
-                    match = re.search(r"ON\s+([\w\.]+)", query, re.IGNORECASE)
+                    # Extract table name from the CREATE INDEX statement.
+                    # Use a word boundary before 'ON' so we don't match strings like
+                    # 'NameVariation ON'.
+                    match = re.search(r"\bON\s+([\w\.]+)", query, re.IGNORECASE)
                     if match:
                         table_for_index = match.group(1)
                     else:
