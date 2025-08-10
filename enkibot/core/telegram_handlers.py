@@ -729,6 +729,19 @@ class TelegramHandlerService:
         if not reaction_update or not reaction_update.new_reaction:
             return
         emoji = reaction_update.new_reaction[0].emoji
+        try:
+            msg = getattr(reaction_update, "message", None)
+            rater = getattr(reaction_update, "user", None)
+            if msg and msg.from_user and rater:
+                await self.karma_manager.record_reaction_event(
+                    chat_id=update.effective_chat.id,
+                    msg_id=msg.message_id,
+                    target_user_id=msg.from_user.id,
+                    rater_user_id=rater.id,
+                    emoji=emoji,
+                )
+        except Exception as exc:
+            logger.error(f"Karma reaction logging failed: {exc}")
         handler = self.reaction_handlers.get(emoji)
         if handler:
             await handler(update, context)
