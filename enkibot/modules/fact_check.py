@@ -35,6 +35,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, TYPE_CHECKING
+from urllib.parse import urlparse
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message
 from telegram.ext import (
@@ -198,7 +199,7 @@ class OpenAIWebFetcher(Fetcher):
             resp = await client.responses.create(
                 model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
                 tools=[{"type": "web_search_preview"}],
-                tool_choice="auto",
+                tool_choice={"type": "web_search_preview"},
                 reasoning={"effort": "medium"},
                 instructions=(
                     "Return 3-6 sources as a JSON array with 'url' and 'title'.",
@@ -215,7 +216,7 @@ class OpenAIWebFetcher(Fetcher):
             title = item.get("title", "")
             if not url:
                 continue
-            domain = url.split("/")[2] if "//" in url else url
+            domain = urlparse(url).netloc or url
             reputation = get_domain_reputation(domain)
             evidences.append(
                 Evidence(
