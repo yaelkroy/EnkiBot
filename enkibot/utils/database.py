@@ -639,7 +639,8 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
                         continue
 
                 check_q = (
-                    "SELECT name FROM sys.indexes WHERE name = ? AND object_id = OBJECT_ID(?)"
+                    "SELECT 1 FROM sys.indexes i INNER JOIN sys.objects o ON i.object_id = o.object_id "
+                    "WHERE i.name = ? AND o.name = ?"
                     if is_idx
                     else "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?"
                 )
