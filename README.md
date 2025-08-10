@@ -49,6 +49,16 @@ EnkiBot is an intelligent and adaptable Telegram assistant designed for rich, co
     * The router escalates from Tier A to Tier B on `/deep` commands or complex prompts.
     * Includes a basic web search tool and FAISS powered RAG module for citations and offline notes.
 
+## News Research Rule of Thumb
+
+When performing news research with EnkiBot, choose models based on your quality and cost needs:
+
+* **Best quality:** `o3-deep-research` → embeddings → web tools → verdict.
+* **Balanced cost/latency:** `o4-mini-deep-research` → embeddings → web tools.
+* **Lots of images:** use `GPT-4o` for image extraction, then `o3-deep-research` or `o4-mini-deep-research` for the final judgment.
+
+See [docs/news_research_guidelines.md](docs/news_research_guidelines.md) for details.
+
 ## Technology Stack
 
 * **Python**: 3.10+
