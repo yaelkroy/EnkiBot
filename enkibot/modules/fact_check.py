@@ -96,6 +96,16 @@ class Evidence:
     book: Optional["BookInfo"] = None
 
 
+def get_domain_reputation(domain: str) -> str:
+    """Return a simple reputation string for known domains."""
+    domain = domain.lower()
+    if "tass.ru" in domain or "rt.com" in domain:
+        return f"Domain {domain} is associated with state-controlled media, often used for propaganda."
+    if "reuters.com" in domain or "apnews.com" in domain:
+        return f"Domain {domain} is a reputable international news agency."
+    return f"Domain {domain} reputation unknown or neutral."
+
+
 @dataclass
 class Verdict:
     """Aggregated verdict for a claim."""
@@ -179,15 +189,22 @@ class OpenAIWebFetcher(Fetcher):
             return []
         client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY)
         try:
+            extra: Dict[str, object] = {"search_context_size": config.OPENAI_SEARCH_CONTEXT_SIZE}
+            if config.OPENAI_SEARCH_USER_LOCATION:
+                try:
+                    extra["user_location"] = json.loads(config.OPENAI_SEARCH_USER_LOCATION)
+                except Exception:
+                    extra["user_location"] = {"country": config.OPENAI_SEARCH_USER_LOCATION}
             resp = await client.responses.create(
                 model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
-                tools=[{"type": "web_search"}],
+                tools=[{"type": "web_search_preview"}],
                 tool_choice="auto",
                 reasoning={"effort": "medium"},
                 instructions=(
-                    "Return 3-6 sources as a JSON array with 'url' and 'title'."
+                    "Return 3-6 sources as a JSON array with 'url' and 'title'.",
                 ),
                 input=claim.text_norm,
+                **extra,
             )
             items = json.loads(resp.output_text)
         except Exception:
@@ -199,12 +216,13 @@ class OpenAIWebFetcher(Fetcher):
             if not url:
                 continue
             domain = url.split("/")[2] if "//" in url else url
+            reputation = get_domain_reputation(domain)
             evidences.append(
                 Evidence(
                     url=url,
                     domain=domain,
                     stance="support",
-                    note=title,
+                    note=f"{title} — {reputation}",
                     published_at=None,
                     snapshot_url=None,
                     tier=None,
