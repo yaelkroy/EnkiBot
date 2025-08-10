@@ -748,16 +748,27 @@ class TelegramHandlerService:
         await update.message.reply_html(self.language_service.get_response_string("start", user_mention=update.effective_user.mention_html()))
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not update.message: return
+        """Send help text to the user regardless of message type."""
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id is None:
+            return
         self.language_service._set_current_language_internals(bot_config.DEFAULT_LANGUAGE)
-        await update.message.reply_text(self.language_service.get_response_string("help"))
+        text = self.language_service.get_response_string("help")
+        if update.message:
+            await update.message.reply_text(text)
+        else:
+            await context.bot.send_message(chat_id=chat_id, text=text)
 
     async def chat_stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not update.message or not update.effective_chat:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id is None:
             return
-        stats = await self.stats_manager.get_chat_stats(update.effective_chat.id)
+        stats = await self.stats_manager.get_chat_stats(chat_id)
         if not stats:
-            await update.message.reply_text("No statistics available yet.")
+            if update.message:
+                await update.message.reply_text("No statistics available yet.")
+            else:
+                await context.bot.send_message(chat_id=chat_id, text="No statistics available yet.")
             return
         lines = [
             "Chat Statistics:",
@@ -773,7 +784,11 @@ class TelegramHandlerService:
             lines.append("Top links:")
             for l in stats['top_links']:
                 lines.append(f"- {l['domain']}: {l['count']}")
-        await update.message.reply_html("\n".join(lines))
+        output = "\n".join(lines)
+        if update.message:
+            await update.message.reply_html(output)
+        else:
+            await context.bot.send_message(chat_id=chat_id, text=output, parse_mode='HTML')
 
     async def my_stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.effective_chat or not update.effective_user:
@@ -839,16 +854,24 @@ class TelegramHandlerService:
         await update.message.reply_text("\n".join(lines))
 
     async def karma_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not update.message or not update.effective_chat:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id is None:
             return
-        top_users = await self.karma_manager.get_top_users(update.effective_chat.id)
+        top_users = await self.karma_manager.get_top_users(chat_id)
         if not top_users:
-            await update.message.reply_text("No karma data available.")
+            if update.message:
+                await update.message.reply_text("No karma data available.")
+            else:
+                await context.bot.send_message(chat_id=chat_id, text="No karma data available.")
             return
         lines = ["Karma leaderboard:"]
         for idx, u in enumerate(top_users, start=1):
             lines.append(f"{idx}. {u['name']}: {u['score']}")
-        await update.message.reply_text("\n".join(lines))
+        output = "\n".join(lines)
+        if update.message:
+            await update.message.reply_text(output)
+        else:
+            await context.bot.send_message(chat_id=chat_id, text=output)
 
     async def language_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message:
