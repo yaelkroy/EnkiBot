@@ -64,9 +64,36 @@ class GeneralIntentHandler:
 
         logger.info(f"GeneralIntentHandler: Handling intent '{master_intent}' for: '{user_msg_txt[:70]}...'")
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        
+
+        is_forwarded = bool(
+            update.message.forward_from
+            or update.message.forward_from_chat
+            or update.message.forward_sender_name
+            or getattr(update.message, "forward_date", None)
+            or getattr(update.message, "forward_origin", None)
+            or getattr(update.message, "is_automatic_forward", False)
+        )
+        if is_forwarded:
+            analyzer_prompts = self.language_service.get_llm_prompt_set("forwarded_news_fact_checker")
+            if analyzer_prompts and "system" in analyzer_prompts:
+                forwarded_text = update.message.text or update.message.caption or ""
+                question = user_msg_txt
+                if question == forwarded_text or len(question.strip()) < 5:
+                    question = self.language_service.get_response_string("replied_message_default_question")
+                fact_check_result = await self.response_generator.fact_check_forwarded_message(
+                    forwarded_text=forwarded_text,
+                    user_question=question,
+                    system_prompt=analyzer_prompts["system"],
+                    user_prompt_template=analyzer_prompts.get("user_template")
+                )
+                await update.message.reply_text(fact_check_result)
+            else:
+                logger.error("Prompt set for forwarded news fact-check is missing or malformed.")
+                await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
+            return
+
         main_orchestrator_prompts = self.language_service.get_llm_prompt_set("main_orchestrator")
-        system_prompt_override = "You are EnkiBot, a helpful and friendly AI assistant." 
+        system_prompt_override = "You are EnkiBot, a helpful and friendly AI assistant."
         
         if main_orchestrator_prompts and "system" in main_orchestrator_prompts:
             system_prompt_template = main_orchestrator_prompts["system"]
