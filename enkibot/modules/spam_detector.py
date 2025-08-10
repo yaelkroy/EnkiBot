@@ -36,6 +36,7 @@ from telegram.ext import ContextTypes
 from enkibot import config as bot_config
 from enkibot.modules.base_module import BaseModule
 from enkibot.core.llm_services import LLMServices
+from enkibot.core.language_service import LanguageService
 from enkibot.utils.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -48,11 +49,13 @@ class SpamDetector(BaseModule):
         self,
         llm_services: LLMServices,
         db_manager: Optional[DatabaseManager] = None,
+        language_service: Optional[LanguageService] = None,
         enabled: bool = True,
     ) -> None:
         super().__init__("SpamDetector")
         self.llm_services = llm_services
         self.db_manager = db_manager
+        self.language_service = language_service
         self.enabled = enabled
         self.captcha_callback: Optional[Callable[[Any, int, ContextTypes.DEFAULT_TYPE], Any]] = None
         # Track per-user state across chats: joined timestamp, verification and clean message count
@@ -158,6 +161,12 @@ class SpamDetector(BaseModule):
 
         chat_id = update.effective_chat.id
         text = update.message.text
+        if self.language_service:
+            try:
+                detected_lang = await self.language_service.determine_language_context(text, chat_id, update)
+                logger.debug("Detected message language: %s", detected_lang)
+            except Exception as e:
+                logger.error("Language detection failed: %s", e)
         key = (chat_id, user.id)
         state = self.user_states.get(key)
         if state is None:
