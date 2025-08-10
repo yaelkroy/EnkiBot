@@ -38,6 +38,13 @@ from enkibot.modules.karma_manager import KarmaManager
 from enkibot.modules.spam_detector import SpamDetector
 from enkibot.modules.stats_manager import StatsManager
 from enkibot.modules.community_moderation import CommunityModerationService
+from enkibot.modules.fact_check import (
+    FactChecker,
+    FactCheckBot,
+    Fetcher,
+    SatireDetector,
+    StanceModel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +113,28 @@ class EnkiBotApplication:
         self.spam_detector.set_captcha_callback(
             self.handler_service.start_captcha
         )
+
+        # ------------------------------------------------------------------
+        # Fact checking subsystem (skeleton implementation)
+        # ------------------------------------------------------------------
+        class _DummyFetcher(Fetcher):
+            pass
+
+        class _DummyStance(StanceModel):
+            pass
+
+        self.fact_checker = FactChecker(fetcher=_DummyFetcher(), stance=_DummyStance())
+
+        def _default_fact_cfg(_chat_id: int) -> dict:
+            return {"satire": {"enabled": False}, "auto": {"auto_check_news": False}}
+
+        self.fact_check_bot = FactCheckBot(
+            app=self.ptb_application,
+            fc=self.fact_checker,
+            satire_detector=SatireDetector(_default_fact_cfg),
+            cfg_reader=_default_fact_cfg,
+        )
+        self.fact_check_bot.register()
 
         logger.info("EnkiBotApplication initialized all services.")
 

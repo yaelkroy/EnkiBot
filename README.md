@@ -41,6 +41,7 @@ EnkiBot is an intelligent and adaptable Telegram assistant designed for rich, co
 * **Administrative Moderation Tools**: one-tap ban/mute/warn commands with case logging, notes and reversible actions to keep chats civil.
 * **NSFW Image Filtering**: optional NudeNet-based scanner that removes high-risk images. Admins can toggle filtering and adjust per-chat sensitivity via `/nsfw_threshold`.
 * **(Planned) Darwinian Self-Improvement**: The project includes a foundational structure and conceptual plan for future integration of self-rewriting code and evolutionary capabilities, inspired by concepts like the Darwin Gödel Machine, aiming for autonomous advancement of the bot's Python modules and LLM prompts.
+* **Fact Checking Skeleton**: initial implementation of a fact checking subsystem with `/factcheck` command, satire detection hooks and admin configuration placeholders.
 * **Two-Tier Local Model Support**:
     * Optional router for fully local inference using `llama.cpp` compatible models.
     * Tier A: fast 7–8B models (e.g., Mistral‑7B or Llama‑3‑8B).
@@ -74,6 +75,7 @@ The project is organized into logical modules:
     * `api_router.py`: Interfacing with external APIs (Weather, News).
     * `response_generator.py`: Composing final bot responses, including context aggregation.
     * `fact_extractor.py`: Rule-based/linguistic fact extraction.
+    * `fact_check.py`: Minimal fact checking subsystem used by the `/factcheck` command.
 * `enkibot/utils/`: Utility functions for `database.py` and `logging_config.py`.
 * `enkibot/lang/`: JSON-based language packs (e.g., `en.json`, `ru.json`).
 * `enkibot/evolution/`: Placeholders for future self-improvement features.
