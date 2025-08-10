@@ -610,6 +610,33 @@ class TelegramHandlerService:
             except Exception:
                 pass
 
+    async def _handle_karma_vote(self, update: Update) -> bool:
+        """Process simple text-based karma votes."""
+        message = update.message
+        if not message or not message.reply_to_message or not message.text:
+            return False
+        giver = update.effective_user
+        receiver = message.reply_to_message.from_user if message.reply_to_message else None
+        if not giver or not receiver:
+            return False
+        result = await self.karma_manager.handle_text_vote(
+            giver.id, receiver.id, message.chat_id, message.text
+        )
+        if result is None:
+            return False
+        receiver_display = f"@{receiver.username}" if receiver.username else receiver.first_name
+        if result == "self_karma_error":
+            await message.reply_text("🤷 You can't vote on yourself.")
+        elif result == "cooldown_error":
+            await message.reply_text("⏱ You can vote for this user again later.")
+        elif result == "karma_changed_success":
+            stats = await self.karma_manager.get_user_stats(receiver.id)
+            total = stats["received"] if stats else 0
+            delta = self.karma_manager.parse_vote_token(message.text)
+            sign = "+" if delta > 0 else ""
+            await message.reply_text(f"{sign}{delta} to {receiver_display} (total {total:+})")
+        return True
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
         if not update.message or not update.message.text or not update.effective_chat or not update.effective_user:
             return None
@@ -625,6 +652,9 @@ class TelegramHandlerService:
             )
 
         await self.log_message_and_profile_tasks(update, context)
+
+        if await self._handle_karma_vote(update):
+            return None
 
         user_msg_txt, triggered_by_prefix = self._extract_ai_trigger(update.message.text)
         user_msg_txt_lower = user_msg_txt.lower()
