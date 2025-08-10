@@ -38,6 +38,7 @@ EnkiBot is an intelligent and adaptable Telegram assistant designed for rich, co
 * **Configurable**: Group access restrictions, API keys, and LLM model IDs are managed via environment variables for security and flexibility.
 * **Robust Error Handling**: Includes database logging for critical errors and user-friendly error messages.
 * **Moderation Logging**: Spam and disallowed content detections are logged to the MS SQL database for auditing and future tuning.
+* **Administrative Moderation Tools**: one-tap ban/mute/warn commands with case logging, notes and reversible actions to keep chats civil.
 * **(Planned) Darwinian Self-Improvement**: The project includes a foundational structure and conceptual plan for future integration of self-rewriting code and evolutionary capabilities, inspired by concepts like the Darwin Gödel Machine, aiming for autonomous advancement of the bot's Python modules and LLM prompts.
 * **Two-Tier Local Model Support**:
     * Optional router for fully local inference using `llama.cpp` compatible models.
