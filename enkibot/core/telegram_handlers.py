@@ -688,14 +688,32 @@ class TelegramHandlerService:
         result, delta = vote_result
         receiver_display = f"@{receiver.username}" if receiver.username else receiver.first_name
         if result == "self_karma_error":
-            await message.reply_text("🤷 You can't vote on yourself.")
+            await message.reply_text(
+                self.language_service.get_response_string(
+                    "karma_self_vote_error", "🤷 You can't vote on yourself."
+                )
+            )
         elif result == "cooldown_error":
-            await message.reply_text("⏱ You can vote for this user again later.")
+            await message.reply_text(
+                self.language_service.get_response_string(
+                    "karma_vote_cooldown",
+                    "⏱ You can vote for this user again later.",
+                )
+            )
         elif result == "karma_changed_success":
             stats = await self.karma_manager.get_user_stats(receiver.id)
             total = stats["received"] if stats else 0
             sign = "+" if delta > 0 else ""
-            await message.reply_text(f"{sign}{delta} to {receiver_display} (total {total:+})")
+            await message.reply_text(
+                self.language_service.get_response_string(
+                    "karma_vote_success",
+                    f"{sign}{delta} to {receiver_display} (total {total:+})",
+                    sign=sign,
+                    delta=delta,
+                    receiver=receiver_display,
+                    total=total,
+                )
+            )
         return True
 
     async def _handle_regenerate_reaction(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
