@@ -29,11 +29,13 @@
 
 import logging
 import httpx
-import openai 
+import openai
 import asyncio
+import time
 from typing import List, Dict, Optional, Any, Tuple
 
 from enkibot import config
+from enkibot.utils.provider_metrics import ProviderMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +71,26 @@ class LLMServices:
         self.openrouter_api_key = openrouter_api_key
         self.openrouter_model_id = openrouter_model_id
         self.openrouter_endpoint_url = openrouter_endpoint_url
-        
+
         self.google_ai_api_key = google_ai_api_key
         self.google_ai_model_id = google_ai_model_id
-        
+
+        # Persistent HTTP client for provider calls
+        self.http_client = httpx.AsyncClient()
+
+        # Metrics tracking structures
+        self.metrics: Dict[str, ProviderMetrics] = {
+            "OpenAI": ProviderMetrics(),
+            "Groq": ProviderMetrics(),
+            "OpenRouter": ProviderMetrics(),
+        }
+
+        self.cost_per_1k_tokens = {
+            "OpenAI": config.OPENAI_COST_PER_1K_TOKENS,
+            "Groq": config.GROQ_COST_PER_1K_TOKENS,
+            "OpenRouter": config.OPENROUTER_COST_PER_1K_TOKENS,
+        }
+
         logger.info("LLMServices __init__ COMPLETED")
 
     # ... (is_provider_configured, call_openai_llm, call_llm_api, race_llm_calls, generate_image_openai methods remain the same) ...
@@ -86,6 +104,11 @@ class LLMServices:
             return bool(self.openrouter_api_key and self.openrouter_endpoint_url and self.openrouter_model_id)
         return False
 
+    def _record_metrics(self, provider: str, latency: float, tokens: int = 0) -> None:
+        metrics = self.metrics.setdefault(provider, ProviderMetrics())
+        cost_per_1k = self.cost_per_1k_tokens.get(provider, 0.0)
+        metrics.record(latency, tokens, cost_per_1k)
+
     async def call_openai_llm(self, messages: List[Dict[str, str]], 
                               model_id: Optional[str] = None, 
                               temperature: float = 0.7, 
@@ -94,16 +117,22 @@ class LLMServices:
         if not self.is_provider_configured("openai"):
             logger.warning("OpenAI client not initialized or API key missing. Cannot make call.")
             return None
-        actual_model_id = model_id or self.openai_model_id 
+        actual_model_id = model_id or self.openai_model_id
         logger.info(f"Calling OpenAI (model: {actual_model_id}) with {len(messages)} messages.")
         call_params = { "model": actual_model_id, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, **kwargs }
         try:
+            start = time.perf_counter()
             completion = await self.openai_async_client.chat.completions.create(**call_params)
+            latency = time.perf_counter() - start
+            tokens = 0
+            if getattr(completion, "usage", None):
+                tokens = getattr(completion.usage, "total_tokens", 0)
+            self._record_metrics("OpenAI", latency, tokens)
             if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
                 return completion.choices[0].message.content.strip()
             logger.warning(f"OpenAI call to {actual_model_id} returned no content or unexpected structure.")
             return None
-        except openai.APIError as e: 
+        except openai.APIError as e:
             logger.error(f"OpenAI API Error (model: {actual_model_id}): {e.message}", exc_info=False)
         except Exception as e:
             logger.error(f"Unexpected error with OpenAI API (model: {actual_model_id}): {e}", exc_info=True)
@@ -118,14 +147,17 @@ class LLMServices:
             return None
         logger.info(f"Calling {provider_name} (model: {model_id}) with {len(messages)} messages.")
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        if provider_name.lower() == "openrouter": 
-            headers.update({"HTTP-Referer": "http://localhost:8000", "X-Title": "EnkiBot"}) 
+        if provider_name.lower() == "openrouter":
+            headers.update({"HTTP-Referer": "http://localhost:8000", "X-Title": "EnkiBot"})
         payload = {"model": model_id, "messages": messages, "max_tokens": max_tokens, "temperature": temperature, **kwargs}
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(endpoint_url, json=payload, headers=headers, timeout=30.0)
+            start = time.perf_counter()
+            resp = await self.http_client.post(endpoint_url, json=payload, headers=headers, timeout=30.0)
+            latency = time.perf_counter() - start
             resp.raise_for_status()
             data = resp.json()
+            tokens = data.get("usage", {}).get("total_tokens", 0)
+            self._record_metrics(provider_name, latency, tokens)
             if data.get("choices") and data["choices"][0].get("message") and data["choices"][0]["message"].get("content"):
                 return data["choices"][0]["message"]["content"].strip()
             logger.warning(f"{provider_name} call to {model_id} returned no content or unexpected structure.")
@@ -287,3 +319,11 @@ class LLMServices:
         except Exception as e:
             logger.error(f"Unexpected error during moderation call: {e}", exc_info=True)
         return None
+
+    async def aclose(self) -> None:
+        """Close underlying HTTP clients."""
+        try:
+            await self.http_client.aclose()
+        finally:
+            if self.openai_async_client:
+                await self.openai_async_client.aclose()

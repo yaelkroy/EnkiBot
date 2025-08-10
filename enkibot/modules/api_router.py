@@ -26,12 +26,14 @@
 
 # (GPLv3 Header as in your files)
 import logging
-import httpx 
+import httpx
+import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 
 from enkibot import config # For API Keys
 # Removed LLMServices import as it's not directly used here anymore for extraction
+from enkibot.utils.provider_metrics import ProviderMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +43,22 @@ class ApiRouter:
         self.news_api_key = news_api_key
         # self.llm_services = llm_services # Not used directly in this version of ApiRouter
 
+        # Persistent HTTP client and metrics containers
+        self.http_client = httpx.AsyncClient()
+        self.metrics: Dict[str, ProviderMetrics] = {
+            "Weather": ProviderMetrics(),
+            "News": ProviderMetrics(),
+        }
+
         self.lang_to_country_map = {
-            "en": "us", "ru": "ru", "de": "de", "fr": "fr", "es": "es", 
+            "en": "us", "ru": "ru", "de": "de", "fr": "fr", "es": "es",
             "it": "it", "ja": "jp", "ko": "kr", "zh": "cn", "bg": "bg",
-            "ua": "ua", "pl": "pl", "tr": "tr", "pt": "pt", 
+            "ua": "ua", "pl": "pl", "tr": "tr", "pt": "pt",
         }
         self.default_news_country = "us"
+
+    def _record_metrics(self, provider: str, latency: float) -> None:
+        self.metrics.setdefault(provider, ProviderMetrics()).record(latency)
 
     def _get_localized_response_string_from_pack(self, lang_pack_full: Optional[Dict[str, Any]], key: str, default_value: str, **kwargs) -> str:
         """ Helper to get response strings directly from a full language pack. """
@@ -76,11 +88,13 @@ class ApiRouter:
         url = "https://api.openweathermap.org/data/2.5/forecast"
         # Requesting enough data points for 5 days (8 records per day * 5 days = 40)
         params = {"q": location, "appid": self.weather_api_key, "units": "metric", "lang": api_lang, "cnt": 40}
-        
+
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params)
-                response.raise_for_status()
+            start = time.perf_counter()
+            response = await self.http_client.get(url, params=params)
+            latency = time.perf_counter() - start
+            response.raise_for_status()
+            self._record_metrics("Weather", latency)
             data = response.json()
 
             city_name = data.get("city", {}).get("name", location)
@@ -161,10 +175,12 @@ class ApiRouter:
         
         url = base_url + endpoint
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, params=params)
-                logger.debug(f"NewsAPI request URL: {resp.url}")
-                resp.raise_for_status()
+            start = time.perf_counter()
+            resp = await self.http_client.get(url, params=params)
+            latency = time.perf_counter() - start
+            logger.debug(f"NewsAPI request URL: {resp.url}")
+            resp.raise_for_status()
+            self._record_metrics("News", latency)
             data = resp.json()
             articles_raw = data.get("articles", [])
             
@@ -190,3 +206,6 @@ class ApiRouter:
         except Exception as e:
             logger.error(f"Unexpected error fetching structured news: {e}", exc_info=True)
         return None
+
+    async def aclose(self) -> None:
+        await self.http_client.aclose()
