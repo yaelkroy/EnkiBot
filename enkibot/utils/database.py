@@ -393,9 +393,9 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         logger.error("Failed to connect to database for initialization (initialize_database).")
         return
     
-    conn.autocommit = True 
+    conn.autocommit = True
     table_queries = {
-        "UserProfiles": "CREATE TABLE UserProfiles (UserID BIGINT PRIMARY KEY, Username NVARCHAR(255) NULL, FirstName NVARCHAR(255) NULL, LastName NVARCHAR(255) NULL, LastSeen DATETIME2 DEFAULT GETDATE(), MessageCount INT DEFAULT 0, PreferredLanguage NVARCHAR(10) NULL, Notes NVARCHAR(MAX) NULL, ProfileLastUpdated DATETIME2 DEFAULT GETDATE());",
+        "UserProfiles": "CREATE TABLE UserProfiles (UserID BIGINT PRIMARY KEY, Username NVARCHAR(255) NULL, FirstName NVARCHAR(255) NULL, LastName NVARCHAR(255) NULL, LastSeen DATETIME2 DEFAULT GETDATE(), MessageCount INT DEFAULT 0, PreferredLanguage NVARCHAR(10) NULL, Notes NVARCHAR(MAX) NULL, ProfileLastUpdated DATETIME2 DEFAULT GETDATE(), KarmaReceived INT NOT NULL DEFAULT 0, KarmaGiven INT NOT NULL DEFAULT 0, HateGiven INT NOT NULL DEFAULT 0);",
         "UserNameVariations": "CREATE TABLE UserNameVariations (VariationID INT IDENTITY(1,1) PRIMARY KEY, UserID BIGINT NOT NULL, NameVariation NVARCHAR(255) NOT NULL, FOREIGN KEY (UserID) REFERENCES UserProfiles(UserID) ON DELETE CASCADE);",
         "IX_UserNameVariations_UserID_NameVariation": "CREATE UNIQUE INDEX IX_UserNameVariations_UserID_NameVariation ON UserNameVariations (UserID, NameVariation);",
         "ConversationHistory": "CREATE TABLE ConversationHistory (MessageDBID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, UserID BIGINT NOT NULL, MessageID BIGINT NULL, Role NVARCHAR(50) NOT NULL, Content NVARCHAR(MAX) NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
@@ -413,6 +413,8 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "ChatSettings": "CREATE TABLE ChatSettings (ChatID BIGINT PRIMARY KEY, SpamVoteThreshold INT NOT NULL DEFAULT 3, NSFWFilterEnabled BIT NOT NULL DEFAULT 0);",
         "SpamReports": "CREATE TABLE SpamReports (ReportID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, TargetUserID BIGINT NOT NULL, ReporterUserID BIGINT NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, CONSTRAINT UQ_SpamReports UNIQUE (ChatID, TargetUserID, ReporterUserID));",
         "IX_SpamReports_Chat_Target": "CREATE INDEX IX_SpamReports_Chat_Target ON SpamReports (ChatID, TargetUserID);",
+        "KarmaLog": "CREATE TABLE KarmaLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, GiverUserID BIGINT NOT NULL, ReceiverUserID BIGINT NOT NULL, Points INT NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
+        "IX_KarmaLog_ChatID_Timestamp": "CREATE INDEX IX_KarmaLog_ChatID_Timestamp ON KarmaLog (ChatID, Timestamp DESC);",
         "VerifiedUsers": "CREATE TABLE VerifiedUsers (UserID BIGINT PRIMARY KEY, VerifiedAt DATETIME2 DEFAULT GETDATE());",
         "ModerationLog": "CREATE TABLE ModerationLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, UserID BIGINT NULL, MessageID BIGINT NOT NULL, Categories NVARCHAR(255) NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "IX_ModerationLog_ChatID_Timestamp": "CREATE INDEX IX_ModerationLog_ChatID_Timestamp ON ModerationLog (ChatID, Timestamp DESC);",
@@ -423,20 +425,50 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
             for name, query in table_queries.items():
                 is_idx = name.startswith("IX_")
                 obj_type = "INDEX" if is_idx else "TABLE"
-                obj_name_to_check = name # For tables, this is the table name. For indexes, this is the index name.
+                obj_name_to_check = name  # For tables, this is the table name. For indexes, this is the index name.
                 table_for_index = ""
                 if is_idx:
                     # Attempt to parse table name from index name, e.g., IX_TableName_Column -> TableName
                     parts = name.split('_')
-                    if len(parts) > 1: table_for_index = parts[1] # This is a heuristic
-                    else: logger.warning(f"Could not determine table for index {name}"); continue 
-                
-                check_q = "SELECT name FROM sys.indexes WHERE name = ? AND object_id = OBJECT_ID(?)" if is_idx else "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?"
+                    if len(parts) > 1:
+                        table_for_index = parts[1]  # This is a heuristic
+                    else:
+                        logger.warning(f"Could not determine table for index {name}")
+                        continue
+
+                check_q = (
+                    "SELECT name FROM sys.indexes WHERE name = ? AND object_id = OBJECT_ID(?)"
+                    if is_idx
+                    else "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?"
+                )
                 params_check = (obj_name_to_check, table_for_index) if is_idx else (obj_name_to_check,)
-                
+
                 cursor.execute(check_q, params_check)
-                if cursor.fetchone(): logger.info(f"{obj_type} '{obj_name_to_check}' already exists.")
-                else: logger.info(f"{obj_type} '{obj_name_to_check}' not found. Creating..."); cursor.execute(query); logger.info(f"{obj_type} '{obj_name_to_check}' created.")
+                if cursor.fetchone():
+                    logger.info(f"{obj_type} '{obj_name_to_check}' already exists.")
+                else:
+                    logger.info(f"{obj_type} '{obj_name_to_check}' not found. Creating...")
+                    cursor.execute(query)
+                    logger.info(f"{obj_type} '{obj_name_to_check}' created.")
+
+            # Ensure karma-related columns exist on UserProfiles for backwards compatibility
+            karma_columns = {
+                "KarmaReceived": "INT NOT NULL DEFAULT 0",
+                "KarmaGiven": "INT NOT NULL DEFAULT 0",
+                "HateGiven": "INT NOT NULL DEFAULT 0",
+            }
+            for col_name, definition in karma_columns.items():
+                cursor.execute(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'UserProfiles' AND COLUMN_NAME = ?",
+                    (col_name,),
+                )
+                if cursor.fetchone():
+                    logger.info(f"Column '{col_name}' already exists in 'UserProfiles'.")
+                else:
+                    logger.info(f"Column '{col_name}' missing in 'UserProfiles'. Adding...")
+                    cursor.execute(f"ALTER TABLE UserProfiles ADD {col_name} {definition}")
+                    logger.info(f"Column '{col_name}' added to 'UserProfiles'.")
+
             logger.info("Database initialization check complete.")
     except Exception as e:
         logger.error(f"DB init error: {e}", exc_info=True)
