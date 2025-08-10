@@ -710,9 +710,9 @@ class TelegramHandlerService:
             question_for_analysis = self.language_service.get_response_string("replied_message_default_question")
         
         is_forwarded = bool(
-            original_msg.forward_from
-            or original_msg.forward_from_chat
-            or original_msg.forward_sender_name
+            getattr(original_msg, "forward_from", None)
+            or getattr(original_msg, "forward_from_chat", None)
+            or getattr(original_msg, "forward_sender_name", None)
             or getattr(original_msg, "forward_date", None)
             or getattr(original_msg, "forward_origin", None)
             or getattr(original_msg, "is_automatic_forward", False)
