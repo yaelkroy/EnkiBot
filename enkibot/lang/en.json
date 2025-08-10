@@ -132,7 +132,10 @@
     "button_show_sources": "Sources",
     "reaction_regenerating": "Regenerating response...",
     "reaction_expanding": "Expanding on previous response...",
-    "reaction_summary": "Generating summary..."
+    "reaction_summary": "Generating summary...",
+    "karma_self_vote_error": "🤷 You can't vote on yourself.",
+    "karma_vote_cooldown": "⏱ You can vote for this user again later.",
+    "karma_vote_success": "{sign}{delta} karma (total {total:+})"
   },
   "weather_conditions_map": {
     "clear_sky": "Clear sky",
