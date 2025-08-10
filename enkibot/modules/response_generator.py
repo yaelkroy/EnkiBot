@@ -87,14 +87,18 @@ class ResponseGenerator:
             user_prompt_template or
             "Forwarded Text:\n---\n{forwarded_text}\n---\n\nUser's Question:\n---\n{user_question}\n---\n\nYour Fact-Check:"
         ).format(forwarded_text=forwarded_text, user_question=user_question)
-        messages_for_api = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+        extra_instruction = (
+            "Respond in the same language as the forwarded text. Use web search in that language "
+            "to verify the claims and cite at least one reliable source (preferably three) with URLs."
+        )
+        messages_for_api = [
+            {"role": "system", "content": f"{system_prompt.strip()} {extra_instruction}"},
+            {"role": "user", "content": user_prompt},
+        ]
         try:
             if self.llm_services.is_provider_configured("openai"):
-                fact_check_response = await self.llm_services.call_openai_llm(
-                    messages_for_api,
-                    model_id=self.llm_services.openai_deep_research_model_id,
-                    temperature=0.0,
-                    max_tokens=1000,
+                fact_check_response = await self.llm_services.call_openai_deep_research(
+                    messages_for_api, max_output_tokens=1000
                 )
             else:
                 fact_check_response = await self.llm_services.race_llm_calls(messages_for_api)
