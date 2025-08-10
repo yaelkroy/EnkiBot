@@ -126,7 +126,11 @@
     "video_message_received": "Я отримав ваше відео -повідомлення. Я обробляю ...",
     "video_transcription_failed": "Вибачте, я не міг розібратися з аудіо у цьому відео.",
     "video_transcription_header": "Відео транскрипція:",
-    "video_translation_header": "Переклад відео (на російську мову):"
+    "video_translation_header": "Переклад відео (на російську мову):",
+    "show_sources_button": "Джерела",
+    "factcheck_hint_book": "Перевірити цитату?",
+    "factcheck_hint_news": "Перевірити як новину?",
+    "top_sources_header": "Основні джерела:"
   },
   "weather_conditions_map": {
     "clear_sky": "Чіткий",

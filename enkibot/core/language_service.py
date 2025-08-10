@@ -28,13 +28,18 @@ import os
 import re
 from typing import Dict, Any, Optional, List
 
-from telegram import Update 
+from telegram import Update
 
-from enkibot import config 
-from enkibot.core.llm_services import LLMServices 
-from enkibot.utils.database import DatabaseManager 
+from langdetect import detect, DetectorFactory, LangDetectException
+from transliterate import translit
+
+from enkibot import config
+from enkibot.core.llm_services import LLMServices
+from enkibot.utils.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
+
+DetectorFactory.seed = 0
 
 class LanguageService:
     def __init__(self, 
@@ -307,12 +312,25 @@ class LanguageService:
             if llm_detected_primary_lang:
                  logger.warning(f"LLM detected lang '{llm_detected_primary_lang}' but confidence ({llm_detected_confidence:.2f}) "
                                f"< threshold ({LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD}). Using current/default: {final_candidate_lang_code}")
-            # If no LLM detection or low confidence, use simple heuristics based
-            # on the characters present in the message. This ensures languages
-            # like Russian are still recognised even when the LLM is
-            # unavailable.
+            langdetect_code: Optional[str] = None
+            if aggregated_text_for_llm_prompt_check:
+                try:
+                    langdetect_code = detect(aggregated_text_for_llm_prompt_check)
+                except LangDetectException:
+                    langdetect_code = None
+                if not re.search(r"[\u0400-\u04FF]", aggregated_text_for_llm_prompt_check):
+                    text_lower = aggregated_text_for_llm_prompt_check.lower()
+                    if re.search(r"\b(privet|poka|spasibo|kak|dela|zdrav|dobry|drug|lyub|govor|chto|eto)\b", text_lower):
+                        try:
+                            translit(aggregated_text_for_llm_prompt_check, "ru")
+                            langdetect_code = "ru"
+                        except Exception:
+                            pass
+
             if re.search(r"[\u0400-\u04FF]", aggregated_text_for_llm_prompt_check):
-                final_candidate_lang_code = "ru"
+                final_candidate_lang_code = "uk" if langdetect_code == "uk" else "ru"
+            elif langdetect_code in ("ru", "uk", "en"):
+                final_candidate_lang_code = langdetect_code
             elif re.search(r"[A-Za-z]", aggregated_text_for_llm_prompt_check):
                 final_candidate_lang_code = "en"
 
