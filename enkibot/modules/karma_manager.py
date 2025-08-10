@@ -8,6 +8,7 @@
 # (Your GPLv3 Header)
 
 import logging
+import re
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 
@@ -18,10 +19,30 @@ logger = logging.getLogger(__name__)
 
 KARMA_COOLDOWN_MINUTES = 5
 
+# Regex patterns for simple text-based votes
+_UPVOTE_PATTERN = re.compile(r"^(?:\+|\+\+|\+1|thx|thanks|good|great|bravo|well\s*done)$", re.IGNORECASE)
+_DOWNVOTE_PATTERN = re.compile(r"^(?:\-|\-\-|\-1|boo|dislike|bad)$", re.IGNORECASE)
+
 class KarmaManager:
     def __init__(self, db_manager: 'DatabaseManager'):
         logger.info("KarmaManager initialized.")
         self.db_manager = db_manager
+
+    def parse_vote_token(self, text: str) -> int:
+        """Return +1 or -1 if the text matches known vote tokens."""
+        stripped = text.strip()
+        if _UPVOTE_PATTERN.match(stripped):
+            return 1
+        if _DOWNVOTE_PATTERN.match(stripped):
+            return -1
+        return 0
+
+    async def handle_text_vote(self, giver_id: int, receiver_id: int, chat_id: int, message_text: str) -> Optional[str]:
+        """Parse a message for karma tokens and apply the change."""
+        points = self.parse_vote_token(message_text)
+        if points == 0:
+            return None
+        return await self.change_karma(giver_id, receiver_id, chat_id, points)
 
     async def change_karma(self, giver_id: int, receiver_id: int, chat_id: int, points: int) -> Optional[str]:
         """
