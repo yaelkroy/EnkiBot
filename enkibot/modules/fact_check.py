@@ -47,6 +47,7 @@ from telegram.ext import (
 )
 from ..utils.message_utils import get_text
 from ..core.llm_services import LLMServices
+from ..core.language_service import LanguageService
 import logging
 import json
 import openai
@@ -562,6 +563,7 @@ class FactCheckBot:
         quote_gate: Optional[QuoteGate] = None,
         cfg_reader: Callable[[int], Dict[str, object]] | None = None,
         db_manager: Optional[DatabaseManager] = None,
+        language_service: Optional[LanguageService] = None,
     ) -> None:
         self.app = app
         self.fc = fc
@@ -570,6 +572,7 @@ class FactCheckBot:
         self.quote_gate = quote_gate or QuoteGate()
         self.cfg_reader = cfg_reader or (lambda _chat_id: {})
         self.db_manager = db_manager
+        self.language_service = language_service
 
     # Public API -------------------------------------------------------------
     def register(self) -> None:
@@ -636,10 +639,20 @@ class FactCheckBot:
                 await self._run_check(update, ctx, text, track="news")
                 return
             if p_book >= 0.55:
-                await self._show_author_only_hint(update, ctx, "Check quote?", "book")
+                hint = (
+                    self.language_service.get_response_string("factcheck_hint_book")
+                    if self.language_service
+                    else "Check quote?"
+                )
+                await self._show_author_only_hint(update, ctx, hint, "book")
                 return
             if p_news >= 0.55:
-                await self._show_author_only_hint(update, ctx, "Check as news?", "news")
+                hint = (
+                    self.language_service.get_response_string("factcheck_hint_news")
+                    if self.language_service
+                    else "Check as news?"
+                )
+                await self._show_author_only_hint(update, ctx, hint, "news")
                 return
 
     async def cmd_factcheck(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -734,7 +747,12 @@ class FactCheckBot:
         lines = [
             f"{icon} Verdict: *{v.label.replace('_', ' ').title()}* ({v.confidence:.0%})",
             v.summary,
-            "\nTop sources:",
+            "\n"
+            + (
+                self.language_service.get_response_string("top_sources_header")
+                if self.language_service
+                else "Top sources:"
+            ),
         ]
         for e in v.sources:
             lines.append(

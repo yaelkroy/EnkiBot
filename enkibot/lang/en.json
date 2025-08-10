@@ -126,7 +126,11 @@
     "video_message_received": "Received your video note. Processing...",
     "video_transcription_failed": "Sorry, I couldn't understand the audio in that video.",
     "video_transcription_header": "Video transcription:",
-    "video_translation_header": "Video translation (Russian):"
+    "video_translation_header": "Video translation (Russian):",
+    "show_sources_button": "Sources",
+    "factcheck_hint_book": "Check quote?",
+    "factcheck_hint_news": "Check as news?",
+    "top_sources_header": "Top sources:"
   },
   "weather_conditions_map": {
     "clear_sky": "Clear sky",
