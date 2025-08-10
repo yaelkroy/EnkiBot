@@ -58,6 +58,7 @@ from telegram.constants import ChatAction
 from telegram.helpers import mention_html
 import re
 import random
+from datetime import datetime, timedelta
 
 try:
     from nudenet import NudeClassifier
@@ -88,6 +89,7 @@ from .intent_handlers.general_handler import GeneralIntentHandler
 from .intent_handlers.image_generation_handler import ImageGenerationIntentHandler
 from enkibot.modules.spam_detector import SpamDetector
 from enkibot.utils.message_utils import is_forwarded_message
+from enkibot.utils.trigger_extractor import extract_assistant_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +147,9 @@ class TelegramHandlerService:
             "➕": self._handle_expand_reaction,
             "📝": self._handle_summary_reaction,
         }
+
+        # Track recent reactions to bot messages for follow-up triggers
+        self.recent_reactors: Dict[int, datetime] = {}
 
         # Map inline refinement actions to handlers
         self.refinement_handlers: Dict[str, Any] = {
@@ -227,15 +232,6 @@ class TelegramHandlerService:
         final_trigger_decision = is_bot_mentioned or is_reply_to_bot
         if is_group and final_trigger_decision: logger.info(f"_is_triggered: True (Group: {current_chat_id}): @M={is_at_mentioned}, NickM={is_nickname_mentioned}, Reply={is_reply_to_bot}")
         return final_trigger_decision
-
-    def _extract_ai_trigger(self, text: str) -> tuple[str, bool]:
-        """Detects natural language invocations like 'Hey, Enki!' and strips them."""
-        pattern = r'^\s*hey[\s,]+enki[!,:]*\s*'
-        match = re.match(pattern, text, re.IGNORECASE)
-        if match:
-            cleaned = text[match.end():].lstrip()
-            return cleaned, True
-        return text, False
 
     async def _is_user_admin(self, chat_id: int, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
         try:
@@ -733,6 +729,8 @@ class TelegramHandlerService:
             msg = getattr(reaction_update, "message", None)
             rater = getattr(reaction_update, "user", None)
             if msg and msg.from_user and rater:
+                if context.bot and msg.from_user.id == context.bot.id:
+                    self.recent_reactors[rater.id] = datetime.utcnow()
                 await self.karma_manager.record_reaction_event(
                     chat_id=update.effective_chat.id,
                     msg_id=msg.message_id,
@@ -765,7 +763,46 @@ class TelegramHandlerService:
         if await self._handle_karma_vote(update):
             return None
 
-        user_msg_txt, triggered_by_prefix = self._extract_ai_trigger(update.message.text)
+        text = update.message.text
+        bot_username_lower = getattr(context.bot, 'username', "").lower() if getattr(context.bot, 'username', None) else ""
+        user_id = update.effective_user.id
+        is_reply_to_bot = (
+            update.message.reply_to_message
+            and update.message.reply_to_message.from_user
+            and context.bot
+            and update.message.reply_to_message.from_user.id == context.bot.id
+        )
+        reason = ""
+        alias = ""
+        now = datetime.utcnow()
+        recent_react = self.recent_reactors.get(user_id)
+        if recent_react and now - recent_react < timedelta(seconds=30):
+            triggered = True
+            user_msg_txt = text.strip()
+            reason = "reaction"
+            self.recent_reactors.pop(user_id, None)
+        elif is_reply_to_bot:
+            triggered = True
+            user_msg_txt = text.strip()
+            reason = "reply"
+        else:
+            triggered, user_msg_txt, alias = extract_assistant_prompt(text, self.bot_nicknames, bot_username_lower)
+            reason = "name" if triggered else ""
+            if not triggered:
+                triggered = await self._is_triggered(update, context, text.lower())
+                if triggered:
+                    reason = "mention"
+                    user_msg_txt = text.strip()
+
+        if not triggered:
+            return None
+
+        if not user_msg_txt:
+            nudge = self.language_service.get_response_string("assistant_prompt_nudge", "Я здесь. О чём рассказать? 🙂")
+            await update.message.reply_text(nudge)
+            await self.db_manager.log_assistant_invocation(chat_id, user_id, update.message.message_id, True, alias, user_msg_txt, reason, self.language_service.current_lang, False, False, None)
+            return None
+
         user_msg_txt_lower = user_msg_txt.lower()
 
         current_conv_state = context.user_data.get('conversation_state') if context.user_data else None
@@ -782,11 +819,9 @@ class TelegramHandlerService:
             original_msg_id = pending_action_details.get("original_message_id")
             return await self.news_handler.handle_topic_response(update, context, original_msg_id)
 
-        draw_request = bool(triggered_by_prefix and re.match(r'^\s*draw\b', user_msg_txt_lower))
+        draw_request = bool(re.match(r'^\s*draw\b', user_msg_txt_lower))
         if await self.spam_detector.inspect_message(update, context):
             return ConversationHandler.END
-        if not (triggered_by_prefix or await self._is_triggered(update, context, user_msg_txt_lower)):
-            return None
 
         master_intent_prompts = self.language_service.get_llm_prompt_set("master_intent_classifier")
         master_intent = "UNKNOWN_INTENT"
@@ -817,10 +852,24 @@ class TelegramHandlerService:
             await self._handle_message_analysis_query(update, context, user_msg_txt) 
         elif master_intent in ["USER_PROFILE_QUERY", "GENERAL_CHAT", "UNKNOWN_INTENT"]:
             await self.general_handler.handle_request(update, context, user_msg_txt, master_intent)
-        else: 
+        else:
             logger.warning(f"Unhandled master intent type: {master_intent}. Falling back to general handler.")
             await self.general_handler.handle_request(update, context, user_msg_txt, "UNKNOWN_INTENT")
-        
+
+        await self.db_manager.log_assistant_invocation(
+            chat_id,
+            user_id,
+            update.message.message_id,
+            True,
+            alias,
+            user_msg_txt,
+            reason,
+            self.language_service.current_lang,
+            True,
+            True,
+            None,
+        )
+
         if next_state is None or next_state == ConversationHandler.END:
             if context.user_data and 'conversation_state' in context.user_data:
                 context.user_data.pop('conversation_state')
@@ -1464,17 +1513,17 @@ class TelegramHandlerService:
         
         conv_handler = ConversationHandler(
             entry_points=[
-                MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message),
-                CommandHandler("news", self.news_command_entry) 
+                MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.FORWARDED, self.handle_message),
+                CommandHandler("news", self.news_command_entry)
             ],
             states={
-                ASK_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)],
-                ASK_NEWS_TOPIC: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)],
+                ASK_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.FORWARDED, self.handle_message)],
+                ASK_NEWS_TOPIC: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.FORWARDED, self.handle_message)],
             },
             fallbacks=[CommandHandler("cancel", self.cancel_conversation)],
-            allow_reentry=True 
+            allow_reentry=True
         )
-        self.application.add_handler(conv_handler)
+        self.application.add_handler(conv_handler, group=50)
         # Register news command metadata for help and command list
         self.default_commands["news"] = {
             "short": "Get the latest news",
