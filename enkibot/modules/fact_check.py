@@ -272,9 +272,16 @@ class FactCheckBot:
             MessageHandler(filters.FORWARDED & TEXT_OR_CAPTION, self.on_forward)
         )
         # Safety net for older PTB versions where Caption filter may not fire
+        try:
+            # PTB < v22
+            document_filter = filters.DOCUMENT
+        except AttributeError:
+            # PTB v22+
+            document_filter = filters.Document.ALL
+
         self.app.add_handler(
             MessageHandler(
-                filters.FORWARDED & (filters.PHOTO | filters.VIDEO | filters.DOCUMENT),
+                filters.FORWARDED & (filters.PHOTO | filters.VIDEO | document_filter),
                 self.on_forward,
             )
         )
