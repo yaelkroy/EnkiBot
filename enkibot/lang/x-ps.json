@@ -129,7 +129,10 @@
     "video_translation_header": "[ Video translation (Russian): ]",
     "hint_check_quote": "[ Check quote? ]",
     "hint_check_news": "[ Check as news? ]",
-    "button_show_sources": "[ Sources ]"
+    "button_show_sources": "[ Sources ]",
+    "reaction_regenerating": "[ Regenerating response... ]",
+    "reaction_expanding": "[ Expanding on previous response... ]",
+    "reaction_summary": "[ Generating summary... ]"
   },
   "weather_conditions_map": {
     "clear_sky": "[ Clear sky* ]",
