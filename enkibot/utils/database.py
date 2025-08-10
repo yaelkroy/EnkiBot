@@ -147,6 +147,41 @@ class DatabaseManager:
             if conn: conn.close()
         return None # Ensure a return path if try fails before commit
 
+    async def log_assistant_invocation(
+        self,
+        chat_id: int,
+        user_id: int,
+        message_id: int,
+        detected: bool,
+        alias: Optional[str],
+        prompt: str,
+        reason: Optional[str],
+        lang: Optional[str],
+        routed_to_llm: bool,
+        llm_ok: bool,
+        error: Optional[str],
+    ) -> None:
+        if not self.connection_string:
+            return
+        sql = (
+            "INSERT INTO assistant_invocations (chat_id, user_id, message_id, detected, alias, prompt, reason, lang, routed_to_llm, llm_ok, error)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        params = (
+            chat_id,
+            user_id,
+            message_id,
+            int(detected),
+            alias,
+            prompt,
+            reason,
+            lang,
+            int(routed_to_llm),
+            int(llm_ok),
+            error,
+        )
+        await self.execute_query(sql, params, commit=True)
+
     async def get_conversation_history(self, chat_id: int, limit: int = 20) -> List[Dict[str, str]]:
         query = "SELECT TOP (?) Role, Content FROM ConversationHistory WHERE ChatID = ? ORDER BY Timestamp DESC"
         rows = await self.execute_query(query, (limit, chat_id), fetch_all=True)
@@ -684,6 +719,23 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "FactCheckLog": "CREATE TABLE FactCheckLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, MessageID BIGINT NULL, ClaimText NVARCHAR(MAX) NOT NULL, Verdict NVARCHAR(50) NOT NULL, Confidence FLOAT NOT NULL, Track NVARCHAR(8) NULL CHECK (Track IN ('news','book')), Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "IX_FactCheckLog_ChatID_Timestamp": "CREATE INDEX IX_FactCheckLog_ChatID_Timestamp ON FactCheckLog (ChatID, Timestamp DESC);",
         "FactGateLog": "CREATE TABLE FactGateLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, MessageID BIGINT NOT NULL, PNews FLOAT NULL, PBook FLOAT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
+        "assistant_invocations": (
+            "CREATE TABLE assistant_invocations ("
+            "id BIGINT IDENTITY PRIMARY KEY,"
+            "chat_id BIGINT,"
+            "user_id BIGINT,"
+            "message_id BIGINT,"
+            "detected BIT,"
+            "alias NVARCHAR(32),"
+            "prompt NVARCHAR(MAX),"
+            "reason NVARCHAR(64),"
+            "lang NVARCHAR(8),"
+            "routed_to_llm BIT,"
+            "llm_ok BIT,"
+            "error NVARCHAR(512),"
+            "ts DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME()"
+            ");",
+        ),
         "FactBookSources": "CREATE TABLE FactBookSources (id BIGINT IDENTITY PRIMARY KEY, author NVARCHAR(256) NOT NULL, title NVARCHAR(512) NOT NULL, edition NVARCHAR(128) NULL, year INT NULL, isbn NVARCHAR(32) NULL, translator NVARCHAR(256) NULL, source_url NVARCHAR(1024) NULL, snapshot_url NVARCHAR(1024) NULL, first_seen DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME());",
         "FactBookMatches": "CREATE TABLE FactBookMatches (match_id BIGINT IDENTITY PRIMARY KEY, run_id BIGINT NOT NULL, book_source_id BIGINT NULL, quote_exact NVARCHAR(MAX) NULL, quote_lang NVARCHAR(8) NULL, page NVARCHAR(32) NULL, chapter NVARCHAR(64) NULL, stance NVARCHAR(12) NULL, score FLOAT NULL);",
         "IX_FactBookMatches_Run": "CREATE INDEX IX_FactBookMatches_Run ON FactBookMatches(run_id);",

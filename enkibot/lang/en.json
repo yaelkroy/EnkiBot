@@ -75,6 +75,7 @@
     "news_api_data_error": "I found some news articles, but I'm having a little trouble summarizing them for you at the moment. You can try checking a news website directly.",
     "start": "Hello, {user_mention}! I am EnkiBot, created by Yael Demedetskaya. How can I help you?",
     "help": "I am EnkiBot, an AI assistant by Yael Demedetskaya.\nIn group chats, I respond when you mention me by name (@EnkiBot, Enki) or reply to my messages.\nYou can ask me 'tell me about [name/topic]' for me to search for information in the chat history.\nTo get the weather, ask 'what's the weather in [city]?'.\nTo get news, ask 'what's the news?' or 'news about [topic]?'.",
+    "assistant_prompt_nudge": "I'm here. What should I do? 🙂",
     "weather_ask_city": "I can get the weather for you, but for which city?",
     "weather_ask_city_failed_extraction": "Sorry, I didn't quite catch the city name. Could you please tell me the city again?",
     "llm_error_fallback": "Sorry, I couldn't process that request right now. Please try again later.",
