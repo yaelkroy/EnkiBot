@@ -566,6 +566,21 @@ class DatabaseManager:
             commit=True,
         )
 
+    async def log_web_request(
+        self,
+        url: str,
+        method: str,
+        status_code: Optional[int],
+        duration_ms: Optional[int],
+        error: Optional[str] = None,
+    ) -> None:
+        """Record an outbound HTTP request for auditing and diagnostics."""
+        await self.execute_query(
+            "INSERT INTO WebRequestLog (Url, Method, StatusCode, DurationMs, Error) VALUES (?, ?, ?, ?, ?)",
+            (url, method, status_code, duration_ms, error),
+            commit=True,
+        )
+
     async def log_answer_evidence(
         self,
         chat_id: int,
@@ -718,6 +733,18 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "IX_ChatLinkStats_ChatID_Count": "CREATE INDEX IX_ChatLinkStats_ChatID_Count ON ChatLinkStats (ChatID, LinkCount DESC);",
         "ErrorLog": "CREATE TABLE ErrorLog (ErrorID INT IDENTITY(1,1) PRIMARY KEY, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, LogLevel NVARCHAR(50) NOT NULL, LoggerName NVARCHAR(255) NULL, ModuleName NVARCHAR(255) NULL, FunctionName NVARCHAR(255) NULL, LineNumber INT NULL, ErrorMessage NVARCHAR(MAX) NOT NULL, ExceptionInfo NVARCHAR(MAX) NULL);",
         "IX_ErrorLog_Timestamp": "CREATE INDEX IX_ErrorLog_Timestamp ON ErrorLog (Timestamp DESC);",
+        "WebRequestLog": (
+            "CREATE TABLE WebRequestLog ("
+            "LogID INT IDENTITY(1,1) PRIMARY KEY,"
+            "Url NVARCHAR(1024) NOT NULL,"
+            "Method NVARCHAR(16) NOT NULL,"
+            "StatusCode INT NULL,"
+            "DurationMs INT NULL,"
+            "Error NVARCHAR(512) NULL,"
+            "Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL"
+            ");",
+        ),
+        "IX_WebRequestLog_Timestamp": "CREATE INDEX IX_WebRequestLog_Timestamp ON WebRequestLog (Timestamp DESC);",
         "ChatSettings": f"CREATE TABLE ChatSettings (ChatID BIGINT PRIMARY KEY, SpamVoteThreshold INT NOT NULL DEFAULT 3, NSFWFilterEnabled BIT NOT NULL DEFAULT 0, NSFWThreshold FLOAT NOT NULL DEFAULT {config.NSFW_DETECTION_THRESHOLD});",
         "SpamReports": "CREATE TABLE SpamReports (ReportID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, TargetUserID BIGINT NOT NULL, ReporterUserID BIGINT NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, CONSTRAINT UQ_SpamReports UNIQUE (ChatID, TargetUserID, ReporterUserID));",
         "IX_SpamReports_Chat_Target": "CREATE INDEX IX_SpamReports_Chat_Target ON SpamReports (ChatID, TargetUserID);",

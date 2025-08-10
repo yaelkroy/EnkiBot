@@ -32,15 +32,22 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 
 from enkibot import config # For API Keys
-# Removed LLMServices import as it's not directly used here anymore for extraction
+from enkibot.utils.database import DatabaseManager
 from enkibot.utils.provider_metrics import ProviderMetrics
 
 logger = logging.getLogger(__name__)
 
 class ApiRouter:
-    def __init__(self, weather_api_key: str | None, news_api_key: str | None, llm_services: Any = None): # llm_services no longer strictly needed here
+    def __init__(
+        self,
+        weather_api_key: str | None,
+        news_api_key: str | None,
+        llm_services: Any = None,
+        db_manager: Optional[DatabaseManager] = None,
+    ):
         self.weather_api_key = weather_api_key
         self.news_api_key = news_api_key
+        self.db_manager = db_manager
         # self.llm_services = llm_services # Not used directly in this version of ApiRouter
 
         # Persistent HTTP client and metrics containers
@@ -95,6 +102,8 @@ class ApiRouter:
             latency = time.perf_counter() - start
             response.raise_for_status()
             self._record_metrics("Weather", latency)
+            if self.db_manager:
+                await self.db_manager.log_web_request(url, "GET", response.status_code, int(latency * 1000), None)
             data = response.json()
 
             city_name = data.get("city", {}).get("name", location)
@@ -146,8 +155,14 @@ class ApiRouter:
             }
 
         except httpx.HTTPStatusError as e:
+            latency = time.perf_counter() - start
+            if self.db_manager:
+                await self.db_manager.log_web_request(url, "GET", e.response.status_code, int(latency * 1000), str(e))
             logger.error(f"HTTP error fetching weather forecast for {location}: {e.response.status_code} - {e.response.text[:200]}")
         except Exception as e:
+            latency = time.perf_counter() - start
+            if self.db_manager:
+                await self.db_manager.log_web_request(url, "GET", None, int(latency * 1000), str(e))
             logger.error(f"Unexpected error fetching structured weather data for {location}: {e}", exc_info=True)
         return None
 
@@ -181,6 +196,8 @@ class ApiRouter:
             logger.debug(f"NewsAPI request URL: {resp.url}")
             resp.raise_for_status()
             self._record_metrics("News", latency)
+            if self.db_manager:
+                await self.db_manager.log_web_request(str(resp.url), "GET", resp.status_code, int(latency * 1000), None)
             data = resp.json()
             articles_raw = data.get("articles", [])
             
@@ -202,8 +219,14 @@ class ApiRouter:
             return processed_articles
             
         except httpx.HTTPStatusError as e:
+            latency = time.perf_counter() - start
+            if self.db_manager:
+                await self.db_manager.log_web_request(url, "GET", e.response.status_code, int(latency * 1000), str(e))
             logger.error(f"HTTP error fetching news ({url}): {e.response.status_code} - {e.response.text[:200]}")
         except Exception as e:
+            latency = time.perf_counter() - start
+            if self.db_manager:
+                await self.db_manager.log_web_request(url, "GET", None, int(latency * 1000), str(e))
             logger.error(f"Unexpected error fetching structured news: {e}", exc_info=True)
         return None
 

@@ -72,7 +72,8 @@ class EnkiBotApplication:
         self.api_router = ApiRouter(
             weather_api_key=config.WEATHER_API_KEY,
             news_api_key=config.NEWS_API_KEY,
-            llm_services=self.llm_services
+            llm_services=self.llm_services,
+            db_manager=self.db_manager,
         )
         self.response_generator = ResponseGenerator(
             self.llm_services,
