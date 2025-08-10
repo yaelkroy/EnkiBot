@@ -78,9 +78,10 @@ def main() -> None:
             Application.builder()
             .token(config.TELEGRAM_BOT_TOKEN)
             .request(request)
-            .post_init(post_init)
             .build()
         )
+        # Register the post_init callback without calling it (avoids NoneType errors)
+        ptb_app.post_init = post_init
 
         logger.info("Initializing EnkiBotApplication...")
         # --- MODIFIED BOT INSTANTIATION ---
