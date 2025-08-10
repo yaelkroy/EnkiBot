@@ -166,7 +166,15 @@ class SpamDetector(BaseModule):
 
         heur_score = self._apply_heuristics(text)
         moderation_result = await self.llm_services.moderate_text_openai(text)
-        scores = moderation_result.get("category_scores", {}) if moderation_result else {}
+        scores_obj = moderation_result.get("category_scores", {}) if moderation_result else {}
+        if hasattr(scores_obj, "model_dump"):
+            scores = scores_obj.model_dump()
+        elif hasattr(scores_obj, "dict"):
+            scores = scores_obj.dict()
+        elif isinstance(scores_obj, dict):
+            scores = scores_obj
+        else:
+            scores = {}
         spamish = max(scores.values()) if scores else 0.0
         risk = self._combined_risk(spamish, heur_score, state)
         if moderation_result and moderation_result.get("flagged"):
