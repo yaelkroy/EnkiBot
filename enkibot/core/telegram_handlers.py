@@ -146,6 +146,13 @@ class TelegramHandlerService:
             "📝": self._handle_summary_reaction,
         }
 
+        # Map inline refinement actions to handlers
+        self.refinement_handlers: Dict[str, Any] = {
+            "regenerate": self._handle_regenerate_reaction,
+            "expand": self._handle_expand_reaction,
+            "summary": self._handle_summary_reaction,
+        }
+
         # Instantiate specialized handlers
         self.weather_handler = WeatherIntentHandler(
             language_service=self.language_service,
@@ -460,6 +467,20 @@ class TelegramHandlerService:
                     await query.edit_message_text(text, reply_markup=keyboard)
                 except Exception:
                     pass
+
+    async def refinement_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        query = update.callback_query
+        if not query or not query.data:
+            return
+        parts = query.data.split(":")
+        if len(parts) != 2:
+            await query.answer()
+            return
+        _, action = parts
+        handler = self.refinement_handlers.get(action)
+        await query.answer()
+        if handler:
+            await handler(update, context)
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.message.voice:
@@ -1425,6 +1446,7 @@ class TelegramHandlerService:
         self.application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, self.handle_left_chat_member))
         self.application.add_handler(CallbackQueryHandler(self.captcha_button_callback, pattern=r"^captcha_button:"))
         self.application.add_handler(CallbackQueryHandler(self.captcha_math_callback, pattern=r"^captcha_math:"))
+        self.application.add_handler(CallbackQueryHandler(self.refinement_callback, pattern=r"^refine:"))
         self.application.add_handler(CallbackQueryHandler(self.community_moderation.on_report_reason, pattern=r"^REPORT:"))
         
         conv_handler = ConversationHandler(
