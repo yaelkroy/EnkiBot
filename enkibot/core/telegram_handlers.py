@@ -40,7 +40,20 @@ from telegram import (
     BotCommandScopeChat,
     BotCommandScopeChatAdministrators,
 )
-from telegram.ext import Application, ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
+from telegram.ext import (
+    Application,
+    ContextTypes,
+    ConversationHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    CallbackQueryHandler,
+)
+# Optional import for message reaction updates
+try:  # pragma: no cover - optional dependency
+    from telegram.ext import MessageReactionHandler
+except Exception:  # pragma: no cover - fallback when not supported
+    MessageReactionHandler = None
 from telegram.constants import ChatAction
 from telegram.helpers import mention_html
 import re
@@ -1439,11 +1452,10 @@ class TelegramHandlerService:
         self.application.add_handler(MessageHandler(filters.VIDEO_NOTE, self.handle_video_note_message))
 
         # Register reaction handler only if message reactions are supported
-        reaction_filter = getattr(filters.UpdateType, "MESSAGE_REACTION", None)
-        if reaction_filter is not None:
-            self.application.add_handler(MessageHandler(reaction_filter, self.reaction_router))
+        if MessageReactionHandler is not None:
+            self.application.add_handler(MessageReactionHandler(self.reaction_router))
         else:
-            logger.warning(
+            logger.info(
                 "Message reactions are not supported by this version of python-telegram-bot; "
                 "reaction handler not registered."
             )
