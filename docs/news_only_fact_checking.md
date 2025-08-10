@@ -1,6 +1,6 @@
-# News‑Only Fact‑Checking — Oracle‑Based Deep Research (o3/o4‑mini + GPT‑4o)
+# News & Book‑Quote Fact‑Checking — Oracle‑Based Deep Research (o3 + GPT‑4o)
 
-This document defines a **best‑of‑the‑best** mechanism for fact‑checking **forwarded news** in Telegram chats. The bot itself **never decides truth**. It orchestrates deep‑search **oracles** and reports their evaluations, with transparent sources and confidence.
+This document defines a **best‑of‑the‑best** mechanism for fact‑checking **forwarded news** and **book quotations** in Telegram chats. The bot itself **never decides truth**. It orchestrates deep‑search **oracles** and reports their evaluations, with transparent sources and confidence.
 
 > **Model routing rules** (built‑in):
 >
@@ -13,6 +13,7 @@ This document defines a **best‑of‑the‑best** mechanism for fact‑checking
 ## 0) Trust Boundary
 
 * **News‑only:** The pipeline first decides whether a forward is *news*. Non‑news (jokes, ads, memes, personal notes) are ignored.
+* **Book quotes:** Forwards that contain book‑like quotations are routed to a quote verification track.
 * **Oracle‑based:** Truth assessments come from **external providers** (search/fact‑check/news APIs). The bot/LLM may *synthesize* but **must not invent** a verdict; it **reports** provider findings and consensus/disagreement.
 * **Explainable:** Every card shows provider names, timestamps, links/snapshots, and confidence *as reported by providers*.
 
@@ -181,6 +182,14 @@ archive.snapshot: {"url":"string"}
 * **Disagreement rate** and time to consensus.
 * **Latency P50/P95** end‑to‑end.
 * **Appeal outcomes** (when users submit counter‑evidence).
+
+---
+
+## Book‑Quote Verification Track
+
+* **Quote Gate**: detects book-like quotations (quotes plus attributions, page numbers, or scanned pages).
+* **Search Oracles**: bibliographic catalogs, quote-investigation sites, and public domain editions.
+* **Output**: original passage (≤200 chars) with edition/page/translator and stance (accurate, misquote, misattrib, unverified).
 
 ---
 
