@@ -32,7 +32,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, TYPE_CHECKING
 from urllib.parse import urlparse
@@ -108,6 +108,7 @@ def get_domain_reputation(domain: str) -> str:
 
 
 @dataclass
+@dataclass
 class Verdict:
     """Aggregated verdict for a claim."""
 
@@ -115,6 +116,7 @@ class Verdict:
     confidence: float
     summary: str
     sources: List[Evidence]
+    debug: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -459,11 +461,12 @@ class FactChecker:
         h = hashlib.sha256(quote.lower().encode("utf-8")).hexdigest()
         return Quote(quote=quote, author=author, title=title, lang=None, hash=h)
 
-    async def _llm_verdict(self, claim: Claim) -> Verdict:
+    async def _llm_verdict(self, claim: Claim, debug: List[str]) -> Verdict:
         """Use LLM to generate a verdict for the claim."""
         logger.debug("LLM verdict: generating for claim '%s'", claim.text_orig)
         if not self.llm_services:
             logger.warning("LLM verdict: llm_services not configured")
+            debug.append("LLM service unavailable")
             return Verdict(
                 label="unverified",
                 confidence=0.0,
@@ -482,13 +485,19 @@ class FactChecker:
             {"role": "user", "content": user_prompt},
         ]
 
+        debug.append(f"LLM model: {getattr(self.llm_services, 'openai_model_id', 'unknown')}")
+        debug.append(f"System prompt: {system_prompt}")
+        debug.append(f"User prompt: {user_prompt}")
+
         try:
             completion = await self.llm_services.call_openai_llm(
                 messages, temperature=0.0, max_tokens=300
             )
             logger.debug("LLM verdict: received completion %r", completion)
+            debug.append(f"Raw response: {completion}")
         except Exception as e:
             logger.error("LLM verdict: call failed: %s", e, exc_info=True)
+            debug.append(f"Call failed: {e}")
             completion = None
 
         label = "unverified"
@@ -511,9 +520,10 @@ class FactChecker:
         )
         return Verdict(label=label, confidence=confidence, summary=summary, sources=[])
 
-    async def _llm_quote_verdict(self, quote: Quote) -> Verdict:
+    async def _llm_quote_verdict(self, quote: Quote, debug: List[str]) -> Verdict:
         """Verify a book quotation using an LLM stub."""
         if not self.llm_services:
+            debug.append("LLM service unavailable for quote check")
             return Verdict(
                 label="unverified",
                 confidence=0.0,
@@ -533,12 +543,18 @@ class FactChecker:
             {"role": "user", "content": user_prompt},
         ]
 
+        debug.append(f"LLM model: {getattr(self.llm_services, 'openai_model_id', 'unknown')}")
+        debug.append(f"System prompt: {system_prompt}")
+        debug.append(f"User prompt: {user_prompt}")
+
         try:
             completion = await self.llm_services.call_openai_llm(
                 messages, temperature=0.0, max_tokens=300
             )
+            debug.append(f"Raw response: {completion}")
         except Exception as e:
             logger.error(f"LLM quote-check failed: {e}", exc_info=True)
+            debug.append(f"Call failed: {e}")
             completion = None
 
         label = "unverified"
@@ -557,27 +573,35 @@ class FactChecker:
 
     async def research(self, claim: Claim | Quote, track: str = "news") -> Verdict:
         logger.debug("Research: track=%s", track)
+        debug: List[str] = [f"track={track}"]
         if track == "book":
             logger.debug("Research: delegating to quote verifier")
-            return await self._llm_quote_verdict(claim)  # type: ignore[arg-type]
+            verdict = await self._llm_quote_verdict(claim, debug)  # type: ignore[arg-type]
+            verdict.debug = debug
+            return verdict
 
         evidence: List[Evidence] = []
         if isinstance(claim, Claim):
             logger.debug("Research: claim='%s' lang=%s", claim.text_norm, claim.lang)
+            debug.append(f"claim='{claim.text_norm}' lang={claim.lang}")
             if self.fetcher:
                 try:
                     web_hits = await self.fetcher.fact_checker_search(claim)
                     logger.debug("Research: web fetcher returned %d items", len(web_hits))
+                    debug.append(f"web fetcher returned {len(web_hits)} items")
                     evidence.extend(web_hits)
                 except Exception as e:
                     logger.error("Research: web fetcher error: %s", e, exc_info=True)
+                    debug.append(f"web fetcher error: {e}")
             else:
                 logger.debug("Research: no web fetcher configured")
+                debug.append("no web fetcher configured")
 
             if self.primary_hunter:
                 try:
                     hits = await self.primary_hunter.hunt(claim.text_norm, claim.lang)
                     logger.debug("Research: primary source hunter returned %d hits", len(hits))
+                    debug.append(f"primary source hunter returned {len(hits)} hits")
                     for h in hits:
                         evidence.append(
                             Evidence(
@@ -594,14 +618,18 @@ class FactChecker:
                     if evidence:
                         evidence = await self.stance.classify(claim, evidence)
                         logger.debug("Research: stance model processed evidence")
+                        debug.append("stance model processed evidence")
                 except Exception as e:
                     logger.error("Research: primary source hunter error: %s", e, exc_info=True)
+                    debug.append(f"primary source hunter error: {e}")
 
-        verdict = await self._llm_verdict(claim)  # type: ignore[arg-type]
+        verdict = await self._llm_verdict(claim, debug)  # type: ignore[arg-type]
         logger.debug(
             "Research: verdict=%s confidence=%.2f", verdict.label, verdict.confidence
         )
+        debug.append(f"verdict={verdict.label} confidence={verdict.confidence:.2f}")
         verdict.sources = evidence
+        verdict.debug = debug
         return verdict
 
 
@@ -753,6 +781,7 @@ class FactCheckBot:
                     verdict.label,
                     verdict.confidence,
                     track,
+                    "\n".join(verdict.debug) if verdict.debug else None,
                 )
             except Exception as e:
                 logger.error(f"Failed to log fact check: {e}", exc_info=True)
