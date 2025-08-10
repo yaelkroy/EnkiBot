@@ -38,3 +38,10 @@ def test_latin_name():
     triggered, content, alias = extract_assistant_prompt("Enki, write a poem", ALIASES)
     assert triggered
     assert content == "write a poem"
+
+
+def test_alias_with_zero_width_space_in_config():
+    custom_aliases = ["бот\u200b"]
+    triggered, content, alias = extract_assistant_prompt("бот расскажи сказку", custom_aliases)
+    assert triggered
+    assert content == "расскажи сказку"

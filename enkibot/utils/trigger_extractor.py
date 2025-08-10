@@ -22,11 +22,13 @@ def extract_assistant_prompt(text: str, aliases: Iterable[str], bot_username: st
         bot_username: Telegram username of the bot, if available.
     """
     t = _normalize(text)
-    alias_list = {a.lower() for a in aliases if a}
-    alias_list.update({a.lower() for a in NAME_ALIASES_DEFAULT})
+
+    # Normalize and case-fold aliases for robust matching across scripts
+    alias_list = {_normalize(a).casefold() for a in aliases if a}
+    alias_list.update({_normalize(a).casefold() for a in NAME_ALIASES_DEFAULT})
     patterns = [re.escape(a) for a in alias_list]
     if bot_username:
-        bot_username = bot_username.lower()
+        bot_username = _normalize(bot_username).casefold()
         patterns.append(re.escape(bot_username))
         patterns.append("@" + re.escape(bot_username))
         if not bot_username.endswith("bot"):
