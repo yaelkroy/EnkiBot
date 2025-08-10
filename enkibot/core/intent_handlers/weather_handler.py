@@ -28,6 +28,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ChatAction
 from enkibot.utils.quota_middleware import enforce_user_quota
+from enkibot.utils.text_splitter import split_text_into_chunks
 
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
@@ -77,7 +78,8 @@ class WeatherIntentHandler:
                     system_prompt=compiler_prompts["system"],
                     user_prompt_template=compiler_prompts["user_template"]
                 )
-                await update.message.reply_text(compiled_response, reply_to_message_id=reply_to_id)
+                for idx, chunk in enumerate(split_text_into_chunks(compiled_response)):
+                    await update.message.reply_text(chunk, reply_to_message_id=reply_to_id if idx == 0 else None)
         else:
             await update.message.reply_text(self.language_service.get_response_string("weather_city_not_found", location=city), reply_to_message_id=reply_to_id)
         return ConversationHandler.END
