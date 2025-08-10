@@ -500,6 +500,129 @@ class DatabaseManager:
             commit=True,
         )
 
+    async def log_answer_evidence(
+        self,
+        chat_id: int,
+        asked_by: int,
+        intent: str,
+        query_text: Optional[str],
+        lang: Optional[str],
+        items: List[Dict[str, Any]],
+    ) -> Optional[int]:
+        """Persist evidence snippets for a given answer.
+
+        Returns the generated answer_id if successful.
+        """
+        if not self.connection_string:
+            return None
+        conn = self.get_db_connection()
+        if not conn:
+            return None
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    (
+                        "INSERT INTO answer_evidence (chat_id, asked_by, intent, query_text, lang) "
+                        "VALUES (?, ?, ?, ?, ?); SELECT SCOPE_IDENTITY();"
+                    ),
+                    (chat_id, asked_by, intent, query_text, lang),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    conn.rollback()
+                    return None
+                answer_id = int(row[0])
+                if items:
+                    params = [
+                        (
+                            answer_id,
+                            it.get("message_id"),
+                            it.get("rank", 0),
+                            it.get("snippet"),
+                            it.get("reason"),
+                        )
+                        for it in items
+                    ]
+                    cursor.executemany(
+                        "INSERT INTO answer_evidence_items (answer_id, message_id, rank, snippet, reason)"
+                        " VALUES (?, ?, ?, ?, ?)",
+                        params,
+                    )
+            conn.commit()
+            return answer_id
+        except pyodbc.Error as ex:
+            logger.error(f"DB error logging answer evidence: {ex}", exc_info=True)
+            try:
+                conn.rollback()
+            except pyodbc.Error:
+                pass
+            return None
+        finally:
+            if conn:
+                conn.close()
+
+    async def save_user_persona_version(
+        self,
+        chat_id: int,
+        user_id: int,
+        portrait_md: str,
+        traits_json: str,
+        signals_json: Optional[str] = None,
+    ) -> bool:
+        """Store a new persona version for the given user.
+
+        Automatically increments the version number for that chat/user pair.
+        """
+        if not self.connection_string:
+            return False
+        conn = self.get_db_connection()
+        if not conn:
+            return False
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT ISNULL(MAX(version),0) + 1 AS next_version FROM user_persona_versions WHERE chat_id = ? AND user_id = ?",
+                    (chat_id, user_id),
+                )
+                row = cursor.fetchone()
+                version = int(row.next_version if row and hasattr(row, "next_version") else 1)
+                cursor.execute(
+                    "INSERT INTO user_persona_versions (chat_id, user_id, version, portrait_md, traits_json, signals_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (chat_id, user_id, version, portrait_md, traits_json, signals_json),
+                )
+            conn.commit()
+            return True
+        except pyodbc.Error as ex:
+            logger.error(f"DB error saving persona version: {ex}", exc_info=True)
+            try:
+                conn.rollback()
+            except pyodbc.Error:
+                pass
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    async def get_latest_user_persona(
+        self, chat_id: int, user_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """Retrieve the most recent persona version for a user."""
+        row = await self.execute_query(
+            "SELECT TOP 1 version, portrait_md, traits_json, signals_json "
+            "FROM user_persona_versions WHERE chat_id = ? AND user_id = ? ORDER BY version DESC",
+            (chat_id, user_id),
+            fetch_one=True,
+        )
+        if not row:
+            return None
+        return {
+            "version": row.version if hasattr(row, "version") else None,
+            "portrait_md": row.portrait_md if hasattr(row, "portrait_md") else None,
+            "traits_json": row.traits_json if hasattr(row, "traits_json") else None,
+            "signals_json": row.signals_json if hasattr(row, "signals_json") else None,
+        }
+
 def initialize_database(): # This function defines and uses DatabaseManager locally
     if not config.DB_CONNECTION_STRING:
         logger.warning("Cannot initialize database: Connection string not configured.")
@@ -543,6 +666,44 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "FactBookSources": "CREATE TABLE FactBookSources (id BIGINT IDENTITY PRIMARY KEY, author NVARCHAR(256) NOT NULL, title NVARCHAR(512) NOT NULL, edition NVARCHAR(128) NULL, year INT NULL, isbn NVARCHAR(32) NULL, translator NVARCHAR(256) NULL, source_url NVARCHAR(1024) NULL, snapshot_url NVARCHAR(1024) NULL, first_seen DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME());",
         "FactBookMatches": "CREATE TABLE FactBookMatches (match_id BIGINT IDENTITY PRIMARY KEY, run_id BIGINT NOT NULL, book_source_id BIGINT NULL, quote_exact NVARCHAR(MAX) NULL, quote_lang NVARCHAR(8) NULL, page NVARCHAR(32) NULL, chapter NVARCHAR(64) NULL, stance NVARCHAR(12) NULL, score FLOAT NULL);",
         "IX_FactBookMatches_Run": "CREATE INDEX IX_FactBookMatches_Run ON FactBookMatches(run_id);",
+        # ------------------------------------------------------------------
+        # Memory/portrait feature tables
+        # ------------------------------------------------------------------
+        "answer_evidence": (
+            "CREATE TABLE answer_evidence ("
+            "answer_id BIGINT IDENTITY PRIMARY KEY,"
+            "chat_id BIGINT NOT NULL,"
+            "asked_by BIGINT NOT NULL,"
+            "intent NVARCHAR(32) NOT NULL,"
+            "query_text NVARCHAR(MAX) NULL,"
+            "lang NVARCHAR(8) NULL,"
+            "created_at DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME()"
+            ");"
+        ),
+        "answer_evidence_items": (
+            "CREATE TABLE answer_evidence_items ("
+            "answer_id BIGINT NOT NULL,"
+            "message_id BIGINT NOT NULL,"
+            "rank INT NOT NULL,"
+            "snippet NVARCHAR(MAX) NULL,"
+            "reason NVARCHAR(64) NULL,"
+            "PRIMARY KEY(answer_id, message_id)"
+            ");"
+        ),
+        "user_persona_versions": (
+            "CREATE TABLE user_persona_versions ("
+            "chat_id BIGINT NOT NULL,"
+            "user_id BIGINT NOT NULL,"
+            "version INT NOT NULL,"
+            "created_at DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME(),"
+            "portrait_md NVARCHAR(MAX) NOT NULL,"
+            "traits_json NVARCHAR(MAX) NOT NULL,"
+            "signals_json NVARCHAR(MAX) NULL,"
+            "PRIMARY KEY(chat_id, user_id, version)"
+            ");"
+        ),
+        "IX_answer_evidence_chat": "CREATE INDEX IX_answer_evidence_chat ON answer_evidence(chat_id, created_at DESC);",
+        "IX_user_persona_versions_lookup": "CREATE INDEX IX_user_persona_versions_lookup ON user_persona_versions(chat_id, user_id, version DESC);",
         # ------------------------------------------------------------------
         # Advanced karma system tables
         # ------------------------------------------------------------------
