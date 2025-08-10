@@ -77,7 +77,7 @@ def main() -> None:
         async def post_init(application: Application) -> None:
             await enkibot_app_instance.handler_service.push_default_commands()
 
-        ptb_app.post_init(post_init)
+        ptb_app.post_init = post_init
         # --- END MODIFICATION ---
 
         logger.info("Starting EnkiBot polling...")
