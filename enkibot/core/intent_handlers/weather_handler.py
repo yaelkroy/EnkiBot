@@ -27,6 +27,7 @@ from typing import Optional, Dict, Any, TYPE_CHECKING
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ChatAction
+from enkibot.utils.quota_middleware import enforce_user_quota
 
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
@@ -67,6 +68,9 @@ class WeatherIntentHandler:
                 logger.error("Weather forecast compiler LLM prompts are missing.")
                 await update.message.reply_text(self.language_service.get_response_string("weather_api_data_error", location=city), reply_to_message_id=reply_to_id)
             else:
+                if not await enforce_user_quota(self.response_generator.db_manager, update.effective_user.id, "llm"):
+                    await update.message.reply_text(self.language_service.get_response_string("llm_quota_exceeded"))
+                    return ConversationHandler.END
                 compiled_response = await self.response_generator.compile_weather_forecast_response(
                     forecast_data_structured=forecast_data,
                     lang_code=self.language_service.current_lang,
@@ -82,6 +86,10 @@ class WeatherIntentHandler:
         # This is the _handle_weather_intent method logic
         logger.info(f"WeatherHandler: Initial WEATHER_QUERY: '{user_msg_txt}'")
         if not update.message or not update.effective_chat: return ConversationHandler.END
+
+        if not await enforce_user_quota(self.response_generator.db_manager, update.effective_user.id, "llm"):
+            await update.message.reply_text(self.language_service.get_response_string("llm_quota_exceeded"))
+            return ConversationHandler.END
 
         location_extract_prompts = self.language_service.get_llm_prompt_set("location_extractor")
         if not (location_extract_prompts and "system" in location_extract_prompts):
@@ -121,7 +129,11 @@ class WeatherIntentHandler:
             logger.error("Location reply extractor LLM prompts are missing or malformed.")
             await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
             return ConversationHandler.END
-            
+
+        if not await enforce_user_quota(self.response_generator.db_manager, update.effective_user.id, "llm"):
+            await update.message.reply_text(self.language_service.get_response_string("llm_quota_exceeded"))
+            return ConversationHandler.END
+
         extracted_city = await self.intent_recognizer.extract_location_from_reply(
             text=user_reply_city_text,
             lang_code=self.language_service.current_lang,

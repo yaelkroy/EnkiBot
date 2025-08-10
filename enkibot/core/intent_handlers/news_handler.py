@@ -27,6 +27,7 @@ from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ChatAction
+from enkibot.utils.quota_middleware import enforce_user_quota
 
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
@@ -85,6 +86,9 @@ class NewsIntentHandler:
                     logger.error("NewsHandler: News compiler LLM prompts are missing or malformed (expecting 'user_template').")
                     await update.message.reply_text(self.language_service.get_response_string("news_api_data_error"), reply_to_message_id=reply_to_id)
                 else:
+                    if not await enforce_user_quota(self.response_generator.db_manager, update.effective_user.id, "llm"):
+                        await update.message.reply_text(self.language_service.get_response_string("llm_quota_exceeded"))
+                        return ConversationHandler.END
                     compiled_response = await self.response_generator.compile_news_response(
                         articles_structured=articles_structured, topic=topic,
                         lang_code=self.language_service.current_lang,
@@ -115,8 +119,12 @@ class NewsIntentHandler:
         logger.info(f"NewsHandler: Handling initial NEWS_QUERY: '{user_msg_txt}'")
         if not update.message or not update.effective_chat: return ConversationHandler.END
 
+        if not await enforce_user_quota(self.response_generator.db_manager, update.effective_user.id, "llm"):
+            await update.message.reply_text(self.language_service.get_response_string("llm_quota_exceeded"))
+            return ConversationHandler.END
+
         news_topic_prompts = self.language_service.get_llm_prompt_set("news_topic_extractor")
-        if not (news_topic_prompts and "system" in news_topic_prompts and news_topic_prompts.get("user_template")): 
+        if not (news_topic_prompts and "system" in news_topic_prompts and news_topic_prompts.get("user_template")):
             logger.error("NewsHandler: News topic extractor LLM prompts missing or malformed (expecting 'user_template').")
             await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
             return ConversationHandler.END
@@ -177,11 +185,15 @@ class NewsIntentHandler:
             await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
             return ConversationHandler.END
 
+        if not await enforce_user_quota(self.response_generator.db_manager, update.effective_user.id, "llm"):
+            await update.message.reply_text(self.language_service.get_response_string("llm_quota_exceeded"))
+            return ConversationHandler.END
+
         extracted_topic = await self.intent_recognizer.extract_topic_from_reply(
             text=user_reply_topic_text,
             lang_code=self.language_service.current_lang,
             system_prompt=extractor_prompts["system"],
-            user_prompt_template=extractor_prompts["user_template"] 
+            user_prompt_template=extractor_prompts["user_template"]
         )
 
         # Use the extracted topic if successful, otherwise fall back to the user's raw input.
