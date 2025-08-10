@@ -25,10 +25,12 @@ from __future__ import annotations
 
 from typing import List, Dict
 import logging
+import json
 
-from duckduckgo_search import DDGS
+import openai
 import requests
 import trafilatura
+from .. import config
 
 logger = logging.getLogger(__name__)
 
@@ -41,18 +43,38 @@ def web_research(query: str, k: int = 5) -> List[Dict[str, str]]:
     """
 
     logger.info("Web research for query: %s", query)
-    hits = list(DDGS().text(query, max_results=k))
+    if not config.OPENAI_API_KEY:
+        return []
+    client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+    try:
+        resp = client.responses.create(
+            model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
+            tools=[{"type": "web_search"}],
+            tool_choice="auto",
+            reasoning={"effort": "medium"},
+            instructions=(
+                f"Return up to {k} sources as a JSON array of objects with 'title' and 'url'."
+            ),
+            input=query,
+        )
+        hits = json.loads(resp.output_text)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Web search failed: %s", exc)
+        return []
     docs: List[Dict[str, str]] = []
-    for hit in hits:
+    for hit in hits[:k]:
+        url = hit.get("url")
+        if not url:
+            continue
         try:
-            html = requests.get(hit["href"], timeout=15).text
+            html = requests.get(url, timeout=15).text
             text = trafilatura.extract(html) or ""
             if text:
                 docs.append({
                     "title": hit.get("title", ""),
-                    "url": hit["href"],
+                    "url": url,
                     "text": text[:20000],
                 })
         except Exception as exc:  # pragma: no cover - network failures common
-            logger.warning("Failed to fetch %s: %s", hit.get("href"), exc)
+            logger.warning("Failed to fetch %s: %s", url, exc)
     return docs

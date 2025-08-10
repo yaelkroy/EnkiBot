@@ -137,7 +137,6 @@ The project is organized into logical modules:
     If you plan to run the local two-tier models you also need:
     ```txt
     llama-cpp-python
-    duckduckgo-search
     trafilatura
     faiss-cpu
     sentence-transformers
@@ -207,7 +206,7 @@ The project is organized into logical modules:
    ```bash
    TELEGRAM_BOT_TOKEN=... python -m enkibot.local_telegram_bot
    ```
-   Normal messages go to the fast 7–8B model. Use `/deep` to force the 70B/72B model or `/web <query>` to run a duckduckgo search and summarise the top pages with citations.
+   Normal messages go to the fast 7–8B model. Use `/deep` to force the 70B/72B model or `/web <query>` to run a web search via the OpenAI Responses API and summarise the top pages with citations.
 4. (Optional) For Retrieval‑Augmented Generation, index your own documents:
    ```python
    from enkibot.modules.rag_service import RAGService
