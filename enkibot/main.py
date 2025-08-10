@@ -69,8 +69,10 @@ def main() -> None:
         
         logger.info("Initializing EnkiBotApplication...")
         # --- MODIFIED BOT INSTANTIATION ---
-        enkibot_app_instance = EnkiBotApplication(ptb_app) 
+        enkibot_app_instance = EnkiBotApplication(ptb_app)
         enkibot_app_instance.register_handlers() # Call the method to register handlers
+        # Publish default slash commands so clients show helpful suggestions
+        asyncio.run(enkibot_app_instance.handler_service.push_default_commands())
         # --- END MODIFICATION ---
 
         logger.info("Starting EnkiBot polling...")
