@@ -440,9 +440,19 @@ class LanguageService:
                 lang_tried = secondary_fallback_lang
                 raw_string = self.response_strings.get(secondary_fallback_lang, {}).get(key)
 
-        if raw_string is None: 
-            if default_value is not None: raw_string = default_value
-            else: logger.error(f"Response string for key '{key}' ultimately not found. Using placeholder."); raw_string = f"[[Missing response: {key}]]"
+        if raw_string is None:
+            if default_value is not None:
+                raw_string = default_value
+            else:
+                logger.error(
+                    f"Response string for key '{key}' ultimately not found",
+                    extra={
+                        "event_type": "i18n.missing_key",
+                        "key": key,
+                        "lang": lang_tried,
+                    },
+                )
+                raw_string = f"[[Missing response: {key}]]"
         
         try:
             return raw_string.format(**kwargs) if kwargs else raw_string

@@ -33,7 +33,7 @@ def _flatten(d: Dict, prefix: str = "") -> Iterable[str]:
             yield new_key
 
 
-def _compare(locales: Dict[str, Dict]) -> None:
+def _compare(locales: Dict[str, Dict]) -> bool:
     key_sets: Dict[str, Set[str]] = {
         lang: set(_flatten(data)) for lang, data in locales.items()
     }
@@ -55,6 +55,7 @@ def _compare(locales: Dict[str, Dict]) -> None:
                     print("  ", k)
     if ok:
         print("All locale files share the same key set.")
+    return ok
 
 
 def _pseudo_localize(base: Dict) -> Dict:
@@ -87,7 +88,8 @@ def main() -> None:
         print("No locale files found in", LANG_DIR, file=sys.stderr)
         sys.exit(1)
 
-    _compare(locales)
+    if not _compare(locales):
+        sys.exit(1)
 
     if args.pseudo:
         base = locales.get("en")
