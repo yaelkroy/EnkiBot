@@ -32,6 +32,7 @@ from telegram.constants import ChatAction
 
 from enkibot.utils.message_utils import is_forwarded_message
 from enkibot.utils.quota_middleware import enforce_user_quota
+from enkibot.utils.text_splitter import split_text_into_chunks
 
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
@@ -84,7 +85,8 @@ class GeneralIntentHandler:
                     system_prompt=analyzer_prompts["system"],
                     user_prompt_template=analyzer_prompts.get("user_template")
                 )
-                await update.message.reply_text(fact_check_result)
+                for chunk in split_text_into_chunks(fact_check_result):
+                    await update.message.reply_text(chunk)
             else:
                 logger.error("Prompt set for forwarded news fact-check is missing or malformed.")
                 await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
@@ -138,6 +140,8 @@ class GeneralIntentHandler:
                     InlineKeyboardButton("\U0001F4DD Summarize", callback_data="refine:summary"),
                 ]]
             )
-            await update.message.reply_text(reply, reply_markup=keyboard)
+            reply_chunks = split_text_into_chunks(reply)
+            for idx, chunk in enumerate(reply_chunks):
+                await update.message.reply_text(chunk, reply_markup=keyboard if idx == 0 else None)
         else:
             await update.message.reply_text(self.language_service.get_response_string("llm_error_fallback"))
