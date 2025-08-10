@@ -37,7 +37,7 @@ def _compare(locales: Dict[str, Dict]) -> None:
     key_sets: Dict[str, Set[str]] = {
         lang: set(_flatten(data)) for lang, data in locales.items()
     }
-    base_lang = next(iter(key_sets))
+    base_lang = "en" if "en" in key_sets else next(iter(key_sets))
     base_keys = key_sets[base_lang]
     ok = True
     for lang, keys in key_sets.items():
