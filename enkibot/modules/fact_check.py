@@ -211,36 +211,81 @@ class SatireDetector:
 
 
 class NewsGate:
-    """Lightweight classifier deciding if text resembles news."""
+    """Heuristic + classifier gate for detecting news-like text.
+
+    The gate follows the revised high-recall strategy: a fast heuristic pass
+    first, falling back to a lightweight keyword based classifier when the
+    heuristics are inconclusive.  The goal is to catch genuine news forwards
+    (including Russian/Ukrainian) without replying to non-news messages.
+    """
 
     def __init__(self) -> None:
-        self.keywords = [
+        # Heuristic feature lexicons -------------------------------------------------
+        self.source_keywords = ["reuters", "ap", "bbc", "tass", "gov", "минобороны", "мчс"]
+        self.news_verbs = [
             "said",
             "announced",
             "reported",
             "claims",
-            "today",
-            "yesterday",
-            "according to",
+            "denied",
+            "заявил",
+            "сообщил",
+            "отметил",
+            "подчеркнул",
+            "приведена",
+            "признал",
         ]
-        self.date_re = re.compile(
+        self.location_keywords = ["москва", "абхаз", "киев", "washington", "moscow"]
+        self.crisis_keywords = ["эвакуац", "санкц", "землетряс", "атака", "боевую готовность"]
+        self.time_re = re.compile(
             r"\b(\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|"
-            r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|yesterday)\b",
+            r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|yesterday|"
+            r"сегодня|вчера|понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)\b",
             re.I,
         )
 
-    async def predict(self, text: str) -> float:
-        text_l = text.lower()
-        score = 0.0
+        # Classifier keywords (used when heuristics are inconclusive) ---------------
+        self.classifier_keywords = [
+            *self.news_verbs,
+            "according to",
+            "today",
+            "yesterday",
+        ]
+
+    # Heuristic pass ---------------------------------------------------------------
+    def _heuristic(self, text_l: str) -> bool:
+        if any(k in text_l for k in self.source_keywords):
+            return True
+        if any(v in text_l for v in self.news_verbs):
+            return True
+        if any(loc in text_l for loc in self.location_keywords):
+            return True
+        if any(c in text_l for c in self.crisis_keywords):
+            return True
+        if self.time_re.search(text_l):
+            return True
         if re.search(r"https?://", text_l):
-            score += 0.3
-        if any(k in text_l for k in self.keywords):
-            score += 0.3
-        if self.date_re.search(text_l):
+            return True
+        return False
+
+    # Lightweight classifier -------------------------------------------------------
+    def _classifier(self, text_l: str) -> float:
+        score = 0.0
+        if any(k in text_l for k in self.classifier_keywords):
+            score += 0.4
+        if self.time_re.search(text_l):
+            score += 0.2
+        if re.search(r"https?://", text_l):
             score += 0.2
         if len(text_l) > 80:
             score += 0.2
         return min(score, 1.0)
+
+    async def predict(self, text: str) -> float:
+        text_l = text.lower()
+        if self._heuristic(text_l):
+            return 1.0
+        return self._classifier(text_l)
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +430,13 @@ class FactCheckBot:
     # Handlers --------------------------------------------------------------
     async def on_forward(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         text = get_text(update.effective_message) or ""
+        if not text and (
+            update.effective_message.photo
+            or update.effective_message.video
+            or update.effective_message.document
+        ):
+            # Text-first workflow: only invoke OCR if the forward lacks text
+            text = await self._ocr_extract(update.effective_message)
         cfg = self.cfg_reader(update.effective_chat.id)
         if cfg.get("satire", {}).get("enabled", True):
             dec = await self.satire.predict(update, text)
@@ -402,14 +454,7 @@ class FactCheckBot:
             if p_news < 0.55:
                 return
             if p_news < 0.70:
-                kb = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Check as news?", callback_data="FC:GATE:CHECK")]]
-                )
-                await ctx.bot.send_message(
-                    update.effective_user.id,
-                    f"{text}\n\nCheck as news?",
-                    reply_markup=kb,
-                )
+                await self._show_author_only_hint(update, ctx)
                 return
             await self._run_check(update, ctx, text)
 
@@ -461,6 +506,31 @@ class FactCheckBot:
                 await target_msg.reply_text(
                     verdict.summary, disable_web_page_preview=True
                 )
+
+    async def _ocr_extract(self, message: Message) -> str:
+        """Extract text from media using a vision model (stub)."""
+        # Placeholder: a real implementation would call GPT-4o or another OCR
+        # service.  Returning an empty string keeps the pipeline silent when no
+        # text is available.
+        try:
+            if self.fc.llm_services:
+                # Actual OCR call would go here.
+                pass
+        except Exception:  # pragma: no cover - best effort
+            pass
+        return ""
+
+    async def _show_author_only_hint(
+        self, update: Update, ctx: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Send a small hint to the original forwarder only."""
+        kb = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Check as news?", callback_data="FC:GATE:CHECK")]]
+        )
+        try:
+            await ctx.bot.send_message(update.effective_user.id, "Check as news?", reply_markup=kb)
+        except Exception:  # pragma: no cover - best effort
+            pass
 
     def _format_card(self, v: Verdict) -> str:
         icon = {
