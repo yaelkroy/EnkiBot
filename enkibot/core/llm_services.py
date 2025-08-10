@@ -144,6 +144,37 @@ class LLMServices:
             logger.error(f"Unexpected error with OpenAI API (model: {actual_model_id}): {e}", exc_info=True)
         return None
 
+    async def call_openai_deep_research(self, messages: List[Dict[str, str]],
+                                        max_output_tokens: int = 1000) -> Optional[str]:
+        """Call OpenAI's deep research model with web search enabled.
+
+        This uses the Responses API so the model can issue web_search tool calls
+        when checking claims. It returns the aggregated text response or
+        ``None`` if the call fails.
+        """
+        if not self.is_provider_configured("openai"):
+            logger.warning("OpenAI client not initialized or API key missing. Cannot make deep research call.")
+            return None
+        try:
+            start = time.perf_counter()
+            response = await self.openai_async_client.responses.create(
+                model=self.openai_deep_research_model_id,
+                input=messages,
+                tools=[{"type": "web_search"}],
+                tool_choice="auto",
+                reasoning={"effort": "medium"},
+                max_output_tokens=max_output_tokens,
+            )
+            latency = time.perf_counter() - start
+            tokens = getattr(response, "usage", {}).get("total_tokens", 0)
+            self._record_metrics("OpenAI", latency, tokens)
+            return getattr(response, "output_text", None)
+        except openai.APIError as e:
+            logger.error(f"OpenAI API Error (deep research): {e.message}", exc_info=False)
+        except Exception as e:
+            logger.error(f"Unexpected error with OpenAI deep research: {e}", exc_info=True)
+        return None
+
     async def embed_texts_openai(self, texts: List[str], model_id: Optional[str] = None) -> Optional[List[List[float]]]:
         """Return embeddings for ``texts`` using OpenAI's embedding endpoint.
 
