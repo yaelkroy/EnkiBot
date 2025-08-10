@@ -26,7 +26,7 @@
 import logging
 from typing import Optional, TYPE_CHECKING
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 
@@ -130,7 +130,14 @@ class GeneralIntentHandler:
             user_search_not_found_response_template=self.language_service.get_response_string("user_search_not_found_in_db") 
         )
         
-        if reply: 
-            await update.message.reply_text(reply)
-        else: 
+        if reply:
+            keyboard = InlineKeyboardMarkup(
+                [[
+                    InlineKeyboardButton("\U0001F504 Regenerate", callback_data="refine:regenerate"),
+                    InlineKeyboardButton("\u2795 Expand", callback_data="refine:expand"),
+                    InlineKeyboardButton("\U0001F4DD Summarize", callback_data="refine:summary"),
+                ]]
+            )
+            await update.message.reply_text(reply, reply_markup=keyboard)
+        else:
             await update.message.reply_text(self.language_service.get_response_string("llm_error_fallback"))
