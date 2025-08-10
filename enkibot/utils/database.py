@@ -197,8 +197,25 @@ class DatabaseManager:
         rows = await self.execute_query(query, (limit, user_id, chat_id), fetch_all=True)
         return [row.MessageText for row in rows] if rows else []
 
+    async def _ensure_user_usage_table(self):
+        """Create the UserUsage table if it does not exist."""
+        await self.execute_query(
+            """
+            IF OBJECT_ID('UserUsage', 'U') IS NULL
+            CREATE TABLE UserUsage (
+                UserID BIGINT NOT NULL,
+                UsageDate DATE NOT NULL,
+                LlmCount INT NOT NULL DEFAULT 0,
+                ImageCount INT NOT NULL DEFAULT 0,
+                CONSTRAINT PK_UserUsage PRIMARY KEY (UserID, UsageDate)
+            );
+            """,
+            commit=True,
+        )
+
     async def get_daily_usage(self, user_id: int, usage_date: Optional[date] = None) -> Dict[str, int]:
         usage_date = usage_date or date.today()
+        await self._ensure_user_usage_table()
         row = await self.execute_query(
             "SELECT LlmCount, ImageCount FROM UserUsage WHERE UserID = ? AND UsageDate = ?",
             (user_id, usage_date),
@@ -211,6 +228,7 @@ class DatabaseManager:
     async def increment_usage(self, user_id: int, usage_type: str, usage_date: Optional[date] = None):
         usage_date = usage_date or date.today()
         column = "LlmCount" if usage_type == "llm" else "ImageCount"
+        await self._ensure_user_usage_table()
         sql = f"""
             MERGE UserUsage AS t USING (VALUES(?,?)) AS s(UserID,UsageDate)
             ON t.UserID = s.UserID AND t.UsageDate = s.UsageDate
