@@ -73,6 +73,31 @@ class KarmaManager:
             return self.config.emoji_map["low_quality"], "low_quality"
         return None
 
+    async def record_reaction_event(
+        self,
+        chat_id: int,
+        msg_id: int,
+        target_user_id: int,
+        rater_user_id: int,
+        emoji: str,
+    ) -> None:
+        """Send reaction events to the SQL procedure for persistence."""
+        if target_user_id == rater_user_id:
+            return
+        query = (
+            "EXEC dbo.usp_RecordKarmaEvent "
+            "@chat_id=?, @msg_id=?, @target_user_id=?, @rater_user_id=?, @emoji=?, @now=?"
+        )
+        params = (
+            chat_id,
+            msg_id,
+            target_user_id,
+            rater_user_id,
+            emoji,
+            datetime.utcnow(),
+        )
+        await self.db_manager.execute_query(query, params, commit=True)
+
     async def handle_text_vote(
         self, giver_id: int, receiver_id: int, chat_id: int, message_text: str
     ) -> Optional[str]:
