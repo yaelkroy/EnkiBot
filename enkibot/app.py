@@ -37,6 +37,7 @@ from enkibot.core.telegram_handlers import TelegramHandlerService
 from enkibot.modules.karma_manager import KarmaManager
 from enkibot.modules.spam_detector import SpamDetector
 from enkibot.modules.stats_manager import StatsManager
+from enkibot.modules.community_moderation import CommunityModerationService
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,9 @@ class EnkiBotApplication:
         )
         self.stats_manager = StatsManager(self.db_manager)
         self.karma_manager = KarmaManager(self.db_manager)
+        self.community_moderation = CommunityModerationService(
+            admin_chat_id=config.REPORTS_CHANNEL_ID
+        )
 
         # Initialize Telegram handlers, passing all necessary services
         self.handler_service = TelegramHandlerService(
@@ -92,6 +96,7 @@ class EnkiBotApplication:
             spam_detector=self.spam_detector,
             stats_manager=self.stats_manager,
             karma_manager=self.karma_manager,
+            community_moderation=self.community_moderation,
             allowed_group_ids=config.ALLOWED_GROUP_IDS, # Pass as set
             bot_nicknames=config.BOT_NICKNAMES_TO_CHECK # Pass as list
         )
