@@ -1437,7 +1437,16 @@ class TelegramHandlerService:
         self.application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, self.handle_photo_message))
         self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
         self.application.add_handler(MessageHandler(filters.VIDEO_NOTE, self.handle_video_note_message))
-        self.application.add_handler(MessageHandler(filters.UpdateType.MESSAGE_REACTION, self.reaction_router))
+
+        # Register reaction handler only if message reactions are supported
+        reaction_filter = getattr(filters.UpdateType, "MESSAGE_REACTION", None)
+        if reaction_filter is not None:
+            self.application.add_handler(MessageHandler(reaction_filter, self.reaction_router))
+        else:
+            logger.warning(
+                "Message reactions are not supported by this version of python-telegram-bot; "
+                "reaction handler not registered."
+            )
 
         self.application.add_error_handler(self.error_handler)
         logger.info("TelegramHandlerService: All handlers registered.")
