@@ -88,7 +88,15 @@ class SpamDetector(BaseModule):
         # Log moderation action to database if configured
         if self.db_manager and self.db_manager.connection_string:
             try:
-                categories = moderation_result.get("categories", {})
+                categories_obj = moderation_result.get("categories", {})
+                if hasattr(categories_obj, "model_dump"):
+                    categories = categories_obj.model_dump()
+                elif hasattr(categories_obj, "dict"):
+                    categories = categories_obj.dict()
+                elif isinstance(categories_obj, dict):
+                    categories = categories_obj
+                else:
+                    categories = {}
                 flagged = ", ".join([k for k, v in categories.items() if v])
                 await self.db_manager.log_moderation_action(
                     chat_id=chat_id,

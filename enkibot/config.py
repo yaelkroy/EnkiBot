@@ -33,7 +33,7 @@ import logging
 # --- Core Bot Settings ---
 TELEGRAM_BOT_TOKEN = os.getenv('ENKI_BOT_TOKEN')
 # A list of bot nicknames that trigger a response in group chats.
-BOT_NICKNAMES_TO_CHECK = ["enki", "enkibot", "энки", "энкибот", "бот", "bot"]
+BOT_NICKNAMES_TO_CHECK = ["enki", "энки", "енки"]
 
 # Feature toggles
 ENABLE_SPAM_DETECTION = os.getenv('ENKI_BOT_ENABLE_SPAM_DETECTION', 'true').lower() == 'true'
