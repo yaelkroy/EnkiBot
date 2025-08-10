@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -210,6 +210,39 @@ class SatireDetector:
         )
 
 
+class NewsGate:
+    """Lightweight classifier deciding if text resembles news."""
+
+    def __init__(self) -> None:
+        self.keywords = [
+            "said",
+            "announced",
+            "reported",
+            "claims",
+            "today",
+            "yesterday",
+            "according to",
+        ]
+        self.date_re = re.compile(
+            r"\b(\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|"
+            r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|yesterday)\b",
+            re.I,
+        )
+
+    async def predict(self, text: str) -> float:
+        text_l = text.lower()
+        score = 0.0
+        if re.search(r"https?://", text_l):
+            score += 0.3
+        if any(k in text_l for k in self.keywords):
+            score += 0.3
+        if self.date_re.search(text_l):
+            score += 0.2
+        if len(text_l) > 80:
+            score += 0.2
+        return min(score, 1.0)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -315,12 +348,14 @@ class FactCheckBot:
         app: Application,
         fc: FactChecker,
         satire_detector: Optional[SatireDetector] = None,
+        news_gate: Optional[NewsGate] = None,
         cfg_reader: Callable[[int], Dict[str, object]] | None = None,
         db_manager: Optional[DatabaseManager] = None,
     ) -> None:
         self.app = app
         self.fc = fc
         self.satire = satire_detector or SatireDetector(lambda _chat_id: {})
+        self.news_gate = news_gate or NewsGate()
         self.cfg_reader = cfg_reader or (lambda _chat_id: {})
         self.db_manager = db_manager
 
@@ -363,6 +398,18 @@ class FactCheckBot:
                 )
                 return
         if cfg.get("auto", {}).get("auto_check_news", True):
+            p_news = await self.news_gate.predict(text)
+            if p_news < 0.55:
+                await update.effective_message.reply_text("Not news — no check.")
+                return
+            if p_news < 0.70:
+                kb = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("Fact check anyway", callback_data="FC:FORCE")]]
+                )
+                await update.effective_message.reply_text(
+                    "Unclear if this is news.", reply_markup=kb
+                )
+                return
             await self._run_check(update, ctx, text)
 
     async def cmd_factcheck(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -372,8 +419,14 @@ class FactCheckBot:
             text = " ".join(ctx.args)
         await self._run_check(update, ctx, text)
 
-    async def _run_check(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, text: str) -> None:
-        """Run a fact check and react to the original message."""
+    async def _run_check(
+        self,
+        update: Update,
+        ctx: ContextTypes.DEFAULT_TYPE,
+        text: str,
+        message: Optional[Message] = None,
+    ) -> None:
+        """Run a fact check and react to the target message."""
 
         claim = await self.fc.extract_claim(text)
         if not claim:
@@ -381,11 +434,12 @@ class FactCheckBot:
 
         verdict = await self.fc.research(claim)
 
-        if self.db_manager and update.effective_chat and update.effective_message:
+        target_msg = message or update.effective_message
+        if self.db_manager and update.effective_chat and target_msg:
             try:
                 await self.db_manager.log_fact_check(
                     update.effective_chat.id,
-                    update.effective_message.message_id,
+                    target_msg.message_id,
                     claim.text_orig,
                     verdict.label,
                     verdict.confidence,
@@ -395,15 +449,15 @@ class FactCheckBot:
 
         try:
             if verdict.label in ("true", "mostly_true"):
-                await update.effective_message.set_reaction("👍")
+                await target_msg.set_reaction("👍")
             else:
-                await update.effective_message.set_reaction("👎")
-                await update.effective_message.reply_text(
+                await target_msg.set_reaction("👎")
+                await target_msg.reply_text(
                     verdict.summary, disable_web_page_preview=True
                 )
         except Exception:  # pragma: no cover - reaction support may vary
             if verdict.label not in ("true", "mostly_true"):
-                await update.effective_message.reply_text(
+                await target_msg.reply_text(
                     verdict.summary, disable_web_page_preview=True
                 )
 
@@ -454,7 +508,17 @@ class FactCheckBot:
 
     async def on_factconfig_cb(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         q = update.callback_query
+        data = q.data
         await q.answer()
+        if data == "FC:FORCE":
+            if q.message and q.message.reply_to_message:
+                orig = q.message.reply_to_message
+                text = get_text(orig) or ""
+                await q.edit_message_text("Checking…")
+                await self._run_check(update, ctx, text, message=orig)
+            else:
+                await q.edit_message_text("Nothing to check.")
+            return
         await q.edit_message_text("Config updated (stub).")
 
     # ------------------------------------------------------------------
