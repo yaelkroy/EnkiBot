@@ -66,9 +66,9 @@ class GeneralIntentHandler:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
         is_forwarded = bool(
-            update.message.forward_from
-            or update.message.forward_from_chat
-            or update.message.forward_sender_name
+            getattr(update.message, "forward_from", None)
+            or getattr(update.message, "forward_from_chat", None)
+            or getattr(update.message, "forward_sender_name", None)
             or getattr(update.message, "forward_date", None)
             or getattr(update.message, "forward_origin", None)
             or getattr(update.message, "is_automatic_forward", False)
