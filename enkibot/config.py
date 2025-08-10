@@ -40,6 +40,10 @@ ENABLE_SPAM_DETECTION = os.getenv('ENKI_BOT_ENABLE_SPAM_DETECTION', 'true').lowe
 CAPTCHA_TIMEOUT_SECONDS = int(os.getenv('ENKI_BOT_CAPTCHA_TIMEOUT_SECONDS', '60'))
 CAPTCHA_MAX_ATTEMPTS = int(os.getenv('ENKI_BOT_CAPTCHA_MAX_ATTEMPTS', '3'))
 
+# Usage quotas
+DAILY_LLM_QUOTA = int(os.getenv('ENKI_BOT_DAILY_LLM_QUOTA', '100'))
+DAILY_IMAGE_QUOTA = int(os.getenv('ENKI_BOT_DAILY_IMAGE_QUOTA', '20'))
+
 # Zero-Trust moderation configuration. These values control how the spam
 # detector treats new or unverified users and how it scores their first
 # messages. All values can be overridden with environment variables.

@@ -35,6 +35,7 @@
 import logging
 import pyodbc
 from typing import List, Dict, Any, Optional
+from datetime import date
 
 from enkibot import config # For DB_CONNECTION_STRING
 
@@ -195,6 +196,36 @@ class DatabaseManager:
         query = "SELECT TOP (?) MessageText FROM ChatLog WHERE UserID = ? AND ChatID = ? AND MessageText IS NOT NULL AND RTRIM(LTRIM(MessageText)) != '' ORDER BY Timestamp DESC"
         rows = await self.execute_query(query, (limit, user_id, chat_id), fetch_all=True)
         return [row.MessageText for row in rows] if rows else []
+
+    async def get_daily_usage(self, user_id: int, usage_date: Optional[date] = None) -> Dict[str, int]:
+        usage_date = usage_date or date.today()
+        row = await self.execute_query(
+            "SELECT LlmCount, ImageCount FROM UserUsage WHERE UserID = ? AND UsageDate = ?",
+            (user_id, usage_date),
+            fetch_one=True,
+        )
+        if row:
+            return {"llm": row.LlmCount or 0, "image": row.ImageCount or 0}
+        return {"llm": 0, "image": 0}
+
+    async def increment_usage(self, user_id: int, usage_type: str, usage_date: Optional[date] = None):
+        usage_date = usage_date or date.today()
+        column = "LlmCount" if usage_type == "llm" else "ImageCount"
+        sql = f"""
+            MERGE UserUsage AS t USING (VALUES(?,?)) AS s(UserID,UsageDate)
+            ON t.UserID = s.UserID AND t.UsageDate = s.UsageDate
+            WHEN MATCHED THEN UPDATE SET {column} = t.{column} + 1
+            WHEN NOT MATCHED THEN INSERT (UserID, UsageDate, {column}) VALUES (s.UserID, s.UsageDate, 1);
+        """
+        await self.execute_query(sql, (user_id, usage_date), commit=True)
+
+    async def check_and_increment_usage(self, user_id: int, usage_type: str, daily_limit: int, usage_date: Optional[date] = None) -> bool:
+        usage_date = usage_date or date.today()
+        usage = await self.get_daily_usage(user_id, usage_date)
+        if usage.get(usage_type, 0) >= daily_limit:
+            return False
+        await self.increment_usage(user_id, usage_type, usage_date)
+        return True
 
     async def add_verified_user(self, user_id: int):
         """Add or update a user in the global verification table."""
@@ -446,6 +477,7 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "ChatLog": "CREATE TABLE ChatLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, UserID BIGINT NOT NULL, Username NVARCHAR(255) NULL, FirstName NVARCHAR(255) NULL, MessageID BIGINT NOT NULL, MessageText NVARCHAR(MAX) NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "IX_ChatLog_ChatID_Timestamp": "CREATE INDEX IX_ChatLog_ChatID_Timestamp ON ChatLog (ChatID, Timestamp DESC);",
         "IX_ChatLog_UserID": "CREATE INDEX IX_ChatLog_UserID ON ChatLog (UserID);",
+        "UserUsage": "CREATE TABLE UserUsage (UserID BIGINT NOT NULL, UsageDate DATE NOT NULL, LlmCount INT NOT NULL DEFAULT 0, ImageCount INT NOT NULL DEFAULT 0, PRIMARY KEY (UserID, UsageDate));",
         "ChatStats": "CREATE TABLE ChatStats (ChatID BIGINT PRIMARY KEY, TotalMessages INT NOT NULL DEFAULT 0, JoinCount INT NOT NULL DEFAULT 0, LeaveCount INT NOT NULL DEFAULT 0, LastUpdated DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "ChatUserStats": "CREATE TABLE ChatUserStats (ChatID BIGINT NOT NULL, UserID BIGINT NOT NULL, MessageCount INT NOT NULL DEFAULT 0, FirstSeen DATETIME2 DEFAULT GETDATE() NOT NULL, LastActive DATETIME2 DEFAULT GETDATE() NOT NULL, PRIMARY KEY (ChatID, UserID));",
         "IX_ChatUserStats_ChatID_MessageCount": "CREATE INDEX IX_ChatUserStats_ChatID_MessageCount ON ChatUserStats (ChatID, MessageCount DESC);",
