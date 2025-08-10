@@ -28,8 +28,8 @@ commands:
 
 ``/fast`` – use the 7–8B model directly.
 ``/deep`` – force the 70B/72B model.
-``/web``  – perform a duckduckgo search, fetch top pages and summarise with
-            citations via the fast model.
+``/web``  – perform a web search via the OpenAI responses API and
+            summarise the top pages with citations using the fast model.
 
 Any other message goes through :class:`~enkibot.modules.model_router.ModelRouter`
 which escalates to the deep model when needed.

@@ -47,8 +47,10 @@ from telegram.ext import (
 )
 from ..utils.message_utils import get_text
 from ..core.llm_services import LLMServices
-import httpx
 import logging
+import json
+import openai
+from .. import config
 from ..utils.database import DatabaseManager
 
 if TYPE_CHECKING:  # pragma: no cover - only for type hints
@@ -161,47 +163,50 @@ class Fetcher:
         return []
 
 
-class DuckDuckGoFetcher(Fetcher):
-    """Simple web fetcher using DuckDuckGo's public API."""
+class OpenAIWebFetcher(Fetcher):
+    """Simple web fetcher using OpenAI's web search tool."""
 
     async def fact_checker_search(self, claim: Claim) -> List[Evidence]:
         return await self.general_search(claim)
 
     async def general_search(self, claim: Claim) -> List[Evidence]:
+        if not config.OPENAI_API_KEY:
+            return []
+        client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY)
         try:
-            resp = await httpx.get(
-                "https://r.jina.ai/http://api.duckduckgo.com/",
-                params={"q": claim.text_norm, "format": "json", "no_redirect": "1", "no_html": "1"},
-                timeout=10.0,
+            resp = await client.responses.create(
+                model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
+                tools=[{"type": "web_search"}],
+                tool_choice="auto",
+                reasoning={"effort": "medium"},
+                instructions=(
+                    "Return 3-6 sources as a JSON array with 'url' and 'title'."
+                ),
+                input=claim.text_norm,
             )
-            data = resp.json()
-            evidences: List[Evidence] = []
-            for topic in data.get("RelatedTopics", [])[:5]:
-                url = topic.get("FirstURL")
-                text = topic.get("Text", "")
-                if not url:
-                    continue
-                domain = url.split("/")[2] if "//" in url else url
-                stance = (
-                    "refute"
-                    if any(k in text.lower() for k in ["fake", "hoax", "debunk", "false"])
-                    else "support"
-                )
-                evidences.append(
-                    Evidence(
-                        url=url,
-                        domain=domain,
-                        stance=stance,
-                        note=text,
-                        published_at=None,
-                        snapshot_url=None,
-                        tier=None,
-                        score=1.0,
-                    )
-                )
-            return evidences
+            items = json.loads(resp.output_text)
         except Exception:
             return []
+        evidences: List[Evidence] = []
+        for item in items[:5]:
+            url = item.get("url")
+            title = item.get("title", "")
+            if not url:
+                continue
+            domain = url.split("/")[2] if "//" in url else url
+            evidences.append(
+                Evidence(
+                    url=url,
+                    domain=domain,
+                    stance="support",
+                    note=title,
+                    published_at=None,
+                    snapshot_url=None,
+                    tier=None,
+                    score=1.0,
+                )
+            )
+        return evidences
 
 
 class StanceModel:

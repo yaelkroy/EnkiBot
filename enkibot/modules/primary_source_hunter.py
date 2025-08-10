@@ -27,7 +27,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Dict
 
-from duckduckgo_search import DDGS
+import json
+import openai
+from .. import config
 
 
 @dataclass
@@ -45,7 +47,10 @@ class PrimarySourceHunter:
 
     def __init__(self, max_results: int = 5) -> None:
         self.max_results = max_results
-        self.ddgs = DDGS()
+        self.client: openai.AsyncOpenAI | None = None
+        if config.OPENAI_API_KEY:
+            self.client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+        self.model_id = config.OPENAI_DEEP_RESEARCH_MODEL_ID
 
         self.official_domains = [
             "gov.uk",
@@ -95,16 +100,41 @@ class PrimarySourceHunter:
                 seen.add(q)
         return expanded
 
-    def _search_domain(self, query: str, domain: str) -> Iterable[SourceHit]:
-        """Search DuckDuckGo for a given domain."""
-        search_q = f"{query} site:{domain}"
-        for hit in self.ddgs.text(search_q, max_results=1):
-            yield SourceHit(
-                url=hit.get("href", ""),
-                title=hit.get("title", ""),
-                domain=domain,
-                tier=0,
+    async def _web_search(self, query: str) -> List[SourceHit]:
+        """Use OpenAI's web search tool to find sources."""
+        if not self.client:
+            return []
+        try:
+            resp = await self.client.responses.create(
+                model=self.model_id,
+                tools=[{"type": "web_search"}],
+                tool_choice="auto",
+                reasoning={"effort": "high"},
+                instructions=(
+                    "You are a primary-source hunter. Always include 3-6 sources (at least 1 primary). "
+                    "Return a JSON array of objects with 'url' and 'title'."
+                ),
+                input=query,
             )
+            items = json.loads(resp.output_text)
+        except Exception:
+            return []
+        hits: List[SourceHit] = []
+        for item in items:
+            url = item.get("url", "")
+            title = item.get("title", "")
+            if not url:
+                continue
+            domain = url.split("/")[2] if "//" in url else url
+            tier = 4
+            if any(domain.endswith(d) for d in self.official_domains):
+                tier = 1
+            elif any(domain.endswith(d) for d in self.wire_domains):
+                tier = 2
+            elif any(domain.endswith(d) for d in self.reputable_domains):
+                tier = 3
+            hits.append(SourceHit(url=url, title=title, domain=domain, tier=tier))
+        return hits
 
     async def hunt(self, claim_text: str, lang: str | None = None) -> List[SourceHit]:
         """Return a list of source hits prioritising official domains."""
@@ -113,36 +143,12 @@ class PrimarySourceHunter:
             langs.append("en")
         queries = self.expand_queries(claim_text, langs)
         hits: List[SourceHit] = []
-
-        # Stage A: primary
         for q in queries:
-            for domain in self.official_domains:
-                for h in self._search_domain(q, domain):
-                    h.tier = 1
-                    hits.append(h)
-                    if len(hits) >= self.max_results:
-                        return hits
+            results = await self._web_search(q)
+            for h in results:
+                hits.append(h)
+                if len(hits) >= self.max_results:
+                    return hits
             if hits:
-                return hits
-
-        # Stage B: wire services
-        for q in queries:
-            for domain in self.wire_domains:
-                for h in self._search_domain(q, domain):
-                    h.tier = 2
-                    hits.append(h)
-                    if len(hits) >= self.max_results:
-                        return hits
-            if hits:
-                return hits
-
-        # Stage C: reputable outlets
-        for q in queries:
-            for domain in self.reputable_domains:
-                for h in self._search_domain(q, domain):
-                    h.tier = 3
-                    hits.append(h)
-                    if len(hits) >= self.max_results:
-                        return hits
-
+                break
         return hits
