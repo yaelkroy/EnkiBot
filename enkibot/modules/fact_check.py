@@ -34,7 +34,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, TYPE_CHECKING
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Message
 from telegram.ext import (
@@ -50,6 +50,9 @@ from ..core.llm_services import LLMServices
 import httpx
 import logging
 from ..utils.database import DatabaseManager
+
+if TYPE_CHECKING:  # pragma: no cover - only for type hints
+    from .primary_source_hunter import PrimarySourceHunter, SourceHit
 
 # Filter for messages that contain either plain text or a caption
 TEXT_OR_CAPTION = (filters.TEXT & ~filters.COMMAND) | filters.CAPTION
@@ -371,10 +374,12 @@ class FactChecker:
         fetcher: Optional[Fetcher] = None,
         stance: Optional[StanceModel] = None,
         llm_services: Optional[LLMServices] = None,
+        primary_hunter: Optional["PrimarySourceHunter"] = None,
     ):
         self.fetcher = fetcher
         self.stance = stance or StanceModel()
         self.llm_services = llm_services
+        self.primary_hunter = primary_hunter
 
     async def extract_claim(self, text: str) -> Optional[Claim]:
         if not text or len(text) < 10:
@@ -495,7 +500,32 @@ class FactChecker:
     async def research(self, claim: Claim | Quote, track: str = "news") -> Verdict:
         if track == "book":
             return await self._llm_quote_verdict(claim)  # type: ignore[arg-type]
-        return await self._llm_verdict(claim)  # type: ignore[arg-type]
+
+        evidence: List[Evidence] = []
+        if isinstance(claim, Claim) and self.primary_hunter:
+            try:
+                hits = await self.primary_hunter.hunt(claim.text_norm, claim.lang)
+                for h in hits:
+                    evidence.append(
+                        Evidence(
+                            url=h.url,
+                            domain=h.domain,
+                            stance="na",
+                            note=h.title,
+                            published_at=None,
+                            snapshot_url=None,
+                            tier=h.tier,
+                            score=1.0,
+                        )
+                    )
+                if evidence:
+                    evidence = await self.stance.classify(claim, evidence)
+            except Exception:
+                evidence = []
+
+        verdict = await self._llm_verdict(claim)  # type: ignore[arg-type]
+        verdict.sources = evidence
+        return verdict
 
 
 # ---------------------------------------------------------------------------

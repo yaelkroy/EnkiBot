@@ -44,6 +44,7 @@ from enkibot.modules.fact_check import (
     SatireDetector,
     StanceModel,
 )
+from enkibot.modules.primary_source_hunter import PrimarySourceHunter
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,11 @@ class EnkiBotApplication:
         # ------------------------------------------------------------------
         # Fact checking subsystem (skeleton implementation)
         # ------------------------------------------------------------------
-        self.fact_checker = FactChecker(stance=StanceModel(), llm_services=self.llm_services)
+        self.fact_checker = FactChecker(
+            stance=StanceModel(),
+            llm_services=self.llm_services,
+            primary_hunter=PrimarySourceHunter(),
+        )
 
         def _default_fact_cfg(_chat_id: int) -> dict:
             return {"satire": {"enabled": False}, "auto": {"auto_check_news": True}}
