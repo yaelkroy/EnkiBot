@@ -639,12 +639,13 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
                         continue
 
                 check_q = (
-                    "SELECT i.name FROM sys.indexes i JOIN sys.tables t ON i.object_id = t.object_id "
-                    "WHERE i.name = ? AND t.name = ?"
+                    "SELECT name FROM sys.indexes WHERE name = ? AND object_id = OBJECT_ID(?)"
                     if is_idx
                     else "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?"
                 )
-                params_check = (obj_name_to_check, table_for_index) if is_idx else (obj_name_to_check,)
+                params_check = (
+                    (obj_name_to_check, table_for_index) if is_idx else (obj_name_to_check,)
+                )
 
                 cursor.execute(check_q, params_check)
                 if cursor.fetchone():
