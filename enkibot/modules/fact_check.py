@@ -292,6 +292,15 @@ class FactChecker:
             "misleading_media": "Real media used out of context or edited.",
             "opinion": "Value judgment; not checkable.",
         }.get(label, "Assessment available.")
+
+        if label == "unverified":
+            total = len(evidences)
+            return (
+                f"{lead} "
+                "Fact-check and web searches yielded no reliable sources to verify or refute the claim. "
+                f"Checked {total} candidate source{'s' if total != 1 else ''}."
+            )
+
         return f"{lead}"
 
 
