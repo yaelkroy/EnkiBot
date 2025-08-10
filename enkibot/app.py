@@ -77,6 +77,7 @@ class EnkiBotApplication:
             enabled=config.ENABLE_SPAM_DETECTION,
         )
         self.stats_manager = StatsManager(self.db_manager)
+        self.karma_manager = KarmaManager(self.db_manager)
 
         # Initialize Telegram handlers, passing all necessary services
         self.handler_service = TelegramHandlerService(
@@ -90,6 +91,7 @@ class EnkiBotApplication:
             language_service=self.language_service,
             spam_detector=self.spam_detector,
             stats_manager=self.stats_manager,
+            karma_manager=self.karma_manager,
             allowed_group_ids=config.ALLOWED_GROUP_IDS, # Pass as set
             bot_nicknames=config.BOT_NICKNAMES_TO_CHECK # Pass as list
         )

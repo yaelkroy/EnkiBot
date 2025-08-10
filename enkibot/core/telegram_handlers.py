@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     from enkibot.modules.response_generator import ResponseGenerator
     from enkibot.modules.spam_detector import SpamDetector
     from enkibot.modules.stats_manager import StatsManager
+    from enkibot.modules.karma_manager import KarmaManager
     from .intent_handlers.weather_handler import WeatherIntentHandler
     from .intent_handlers.news_handler import NewsIntentHandler
     from .intent_handlers.general_handler import GeneralIntentHandler
@@ -91,6 +92,7 @@ class TelegramHandlerService:
                  language_service: 'LanguageService',
                  spam_detector: 'SpamDetector',
                  stats_manager: 'StatsManager',
+                 karma_manager: 'KarmaManager',
                  allowed_group_ids: set,
                  bot_nicknames: list
                 ):
@@ -105,6 +107,7 @@ class TelegramHandlerService:
         self.language_service = language_service
         self.spam_detector = spam_detector
         self.stats_manager = stats_manager
+        self.karma_manager = karma_manager
         
         self.allowed_group_ids = allowed_group_ids 
         self.bot_nicknames = bot_nicknames
@@ -114,6 +117,8 @@ class TelegramHandlerService:
         self.nsfw_classifier: Optional['NudeClassifier'] = None
         # Feature flags per chat for dynamic command hints
         self.features_db: Dict[int, Dict[str, bool]] = {}
+        # Manual language overrides per chat
+        self.chat_languages: Dict[int, str] = {}
 
         # Instantiate specialized handlers
         self.weather_handler = WeatherIntentHandler(
@@ -602,18 +607,21 @@ class TelegramHandlerService:
                 pass
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
-        if not update.message or not update.message.text or not update.effective_chat or not update.effective_user: 
-            return None 
-        
-        await self.language_service.determine_language_context(
-            update.message.text, 
-            chat_id=update.effective_chat.id,
-            update_context=update
-        )
-        
-        await self.log_message_and_profile_tasks(update, context)
-        
+        if not update.message or not update.message.text or not update.effective_chat or not update.effective_user:
+            return None
+
         chat_id = update.effective_chat.id
+        if chat_id in self.chat_languages:
+            self.language_service._set_current_language_internals(self.chat_languages[chat_id])
+        else:
+            await self.language_service.determine_language_context(
+                update.message.text,
+                chat_id=chat_id,
+                update_context=update
+            )
+
+        await self.log_message_and_profile_tasks(update, context)
+
         user_msg_txt, triggered_by_prefix = self._extract_ai_trigger(update.message.text)
         user_msg_txt_lower = user_msg_txt.lower()
 
@@ -825,6 +833,49 @@ class TelegramHandlerService:
         ]
         await update.message.reply_text("\n".join(lines))
 
+    async def karma_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.effective_chat:
+            return
+        top_users = await self.karma_manager.get_top_users(update.effective_chat.id)
+        if not top_users:
+            await update.message.reply_text("No karma data available.")
+            return
+        lines = ["Karma leaderboard:"]
+        for idx, u in enumerate(top_users, start=1):
+            lines.append(f"{idx}. {u['name']}: {u['score']}")
+        await update.message.reply_text("\n".join(lines))
+
+    async def language_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message:
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        if not context.args:
+            await update.message.reply_text("Usage: /language <code>")
+            return
+        lang_code = context.args[0].lower()
+        if lang_code not in self.language_service.language_packs:
+            await update.message.reply_text("Unsupported language code.")
+            return
+        self.chat_languages[chat_id] = lang_code
+        self.language_service._set_current_language_internals(lang_code)
+        await update.message.reply_text(f"Language for this chat set to {lang_code}.")
+
+    async def reload_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message:
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        self.chat_languages.pop(chat_id, None)
+        self.stats_manager.memory_stats.pop(chat_id, None)
+        self.features_db.pop(chat_id, None)
+        await self.refresh_chat_commands(chat_id)
+        await update.message.reply_text("Chat data reloaded.")
+
     async def news_command_entry(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
         if not update.message or not update.effective_user: return ConversationHandler.END
         self.language_service._set_current_language_internals(bot_config.DEFAULT_LANGUAGE)
@@ -918,6 +969,30 @@ class TelegramHandlerService:
             logger.error(f"Failed to ban user {target.id}: {e}")
             await update.message.reply_text("Failed to ban user.")
 
+    async def qban_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a user's message to ban them.")
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        target = update.message.reply_to_message.from_user
+        try:
+            await context.bot.ban_chat_member(chat_id, target.id)
+        except Exception as e:
+            logger.error(f"Failed to ban user {target.id}: {e}")
+            await update.message.reply_text("Failed to ban user.")
+            return
+        try:
+            await update.message.reply_to_message.delete()
+        except Exception:
+            pass
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
+
     async def unban_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.message.reply_to_message:
             await update.message.reply_text("Reply to a user's message to unban them.")
@@ -934,6 +1009,30 @@ class TelegramHandlerService:
         except Exception as e:
             logger.error(f"Failed to unban user {target.id}: {e}")
             await update.message.reply_text("Failed to unban user.")
+
+    async def baninfo_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a user's message to get ban info.")
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        target = update.message.reply_to_message.from_user
+        try:
+            member = await context.bot.get_chat_member(chat_id, target.id)
+            if member.status == "kicked":
+                if member.until_date:
+                    await update.message.reply_html(
+                        f"User {target.mention_html()} is banned until {member.until_date}.")
+                else:
+                    await update.message.reply_html(
+                        f"User {target.mention_html()} is banned permanently.")
+            else:
+                await update.message.reply_text("User is not banned.")
+        except Exception as e:
+            logger.error(f"Failed to get ban info for user {target.id}: {e}")
+            await update.message.reply_text("Failed to get ban info.")
 
     async def kick_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.message.reply_to_message:
@@ -996,6 +1095,31 @@ class TelegramHandlerService:
         except Exception as e:
             logger.error(f"Failed to unmute user {target.id}: {e}")
             await update.message.reply_text("Failed to unmute user.")
+
+    async def muteinfo_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.message.reply_to_message:
+            await update.message.reply_text("Reply to a user's message to get mute info.")
+            return
+        chat_id = update.effective_chat.id
+        invoker_id = update.effective_user.id if update.effective_user else 0
+        if not await self._is_user_admin(chat_id, invoker_id, context):
+            return
+        target = update.message.reply_to_message.from_user
+        try:
+            member = await context.bot.get_chat_member(chat_id, target.id)
+            can_send = getattr(member, 'can_send_messages', True)
+            if member.status == "restricted" or not can_send:
+                if member.until_date:
+                    await update.message.reply_html(
+                        f"User {target.mention_html()} is muted until {member.until_date}.")
+                else:
+                    await update.message.reply_html(
+                        f"User {target.mention_html()} is muted indefinitely.")
+            else:
+                await update.message.reply_text("User is not muted.")
+        except Exception as e:
+            logger.error(f"Failed to get mute info for user {target.id}: {e}")
+            await update.message.reply_text("Failed to get mute info.")
 
     async def warn_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.message.reply_to_message:
@@ -1091,6 +1215,7 @@ class TelegramHandlerService:
             BotCommand("mystat", "Your statistics"),
             BotCommand("report", "Report a message"),
             BotCommand("spam", "Vote to ban a spammer"),
+            BotCommand("karma", "Show karma leaderboard"),
         ]
         await self.application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
 
@@ -1100,6 +1225,7 @@ class TelegramHandlerService:
         cmds = [
             BotCommand("stat", "Show chat statistics"),
             BotCommand("report", "Report a message"),
+            BotCommand("karma", "Show karma leaderboard"),
         ]
         if cfg.get("ai"):
             cmds.append(BotCommand("ask", "Ask AI a question"))
@@ -1109,8 +1235,18 @@ class TelegramHandlerService:
         await self.application.bot.set_my_commands(cmds, scope=BotCommandScopeChat(chat_id))
         admin_cmds = [
             BotCommand("ban", "Ban the replied user"),
+            BotCommand("qban", "Quick ban and delete"),
+            BotCommand("unban", "Unban the replied user"),
+            BotCommand("baninfo", "Ban info of the replied user"),
+            BotCommand("kick", "Kick the replied user"),
             BotCommand("mute", "Mute the replied user"),
+            BotCommand("unmute", "Unmute the replied user"),
+            BotCommand("muteinfo", "Mute info of the replied user"),
             BotCommand("warn", "Warn the replied user"),
+            BotCommand("rm_warn", "Remove user warnings"),
+            BotCommand("warns_list", "List user warnings"),
+            BotCommand("language", "Set chat language"),
+            BotCommand("reload", "Reload chat data"),
         ]
         await self.application.bot.set_my_commands(admin_cmds, scope=BotCommandScopeChatAdministrators(chat_id))
 
@@ -1158,13 +1294,19 @@ class TelegramHandlerService:
         self.application.add_handler(CommandHandler("report", self.report_command))
         self.application.add_handler(CommandHandler(["spam", "voteban"], self.spam_vote_command))
         self.application.add_handler(CommandHandler("ban", self.ban_command))
+        self.application.add_handler(CommandHandler("qban", self.qban_command))
         self.application.add_handler(CommandHandler(["unban", "pardon"], self.unban_command))
+        self.application.add_handler(CommandHandler("baninfo", self.baninfo_command))
         self.application.add_handler(CommandHandler("kick", self.kick_command))
         self.application.add_handler(CommandHandler("mute", self.mute_command))
         self.application.add_handler(CommandHandler("unmute", self.unmute_command))
+        self.application.add_handler(CommandHandler("muteinfo", self.muteinfo_command))
         self.application.add_handler(CommandHandler(["stat", "stats"], self.chat_stats_command))
         self.application.add_handler(CommandHandler("mystat", self.my_stats_command))
         self.application.add_handler(CommandHandler("userstats", self.user_stats_command))
+        self.application.add_handler(CommandHandler("karma", self.karma_command))
+        self.application.add_handler(CommandHandler("language", self.language_command))
+        self.application.add_handler(CommandHandler("reload", self.reload_command))
         self.application.add_handler(CommandHandler("warn", self.warn_command))
         self.application.add_handler(CommandHandler("warns_list", self.warns_list_command))
         self.application.add_handler(CommandHandler(["rm_warn", "clear_warn"], self.remove_warn_command))
