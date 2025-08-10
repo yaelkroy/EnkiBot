@@ -100,13 +100,19 @@ class KarmaManager:
 
     async def handle_text_vote(
         self, giver_id: int, receiver_id: int, chat_id: int, message_text: str
-    ) -> Optional[str]:
-        """Parse a message for karma tokens and apply the change."""
+    ) -> Optional[Tuple[str, float]]:
+        """Parse a message for karma tokens and apply the change.
+
+        Returns a tuple of (result, base_weight) on success so callers can
+        report the delta without reparsing the message.  If the message does
+        not contain a valid karma token, returns ``None``.
+        """
         parsed = self.parse_vote_token(message_text)
         if not parsed:
             return None
         base, tag = parsed
-        return await self.change_karma(giver_id, receiver_id, chat_id, base, tag)
+        result = await self.change_karma(giver_id, receiver_id, chat_id, base, tag)
+        return result, base
 
     async def _get_rater_trust(self, chat_id: int, user_id: int) -> float:
         """Fetch rater trust from the trust_table if present."""

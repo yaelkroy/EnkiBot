@@ -684,11 +684,12 @@ class TelegramHandlerService:
         receiver = message.reply_to_message.from_user if message.reply_to_message else None
         if not giver or not receiver:
             return False
-        result = await self.karma_manager.handle_text_vote(
+        vote_result = await self.karma_manager.handle_text_vote(
             giver.id, receiver.id, message.chat_id, message.text
         )
-        if result is None:
+        if vote_result is None:
             return False
+        result, delta = vote_result
         receiver_display = f"@{receiver.username}" if receiver.username else receiver.first_name
         if result == "self_karma_error":
             await message.reply_text("🤷 You can't vote on yourself.")
@@ -697,7 +698,6 @@ class TelegramHandlerService:
         elif result == "karma_changed_success":
             stats = await self.karma_manager.get_user_stats(receiver.id)
             total = stats["received"] if stats else 0
-            delta = self.karma_manager.parse_vote_token(message.text)
             sign = "+" if delta > 0 else ""
             await message.reply_text(f"{sign}{delta} to {receiver_display} (total {total:+})")
         return True
