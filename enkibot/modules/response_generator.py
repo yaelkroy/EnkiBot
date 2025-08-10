@@ -89,7 +89,15 @@ class ResponseGenerator:
         ).format(forwarded_text=forwarded_text, user_question=user_question)
         messages_for_api = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
         try:
-            fact_check_response = await self.llm_services.race_llm_calls(messages_for_api)
+            if self.llm_services.is_provider_configured("openai"):
+                fact_check_response = await self.llm_services.call_openai_llm(
+                    messages_for_api,
+                    model_id=config.OPENAI_MODEL_ID,
+                    temperature=0.0,
+                    max_tokens=1000,
+                )
+            else:
+                fact_check_response = await self.llm_services.race_llm_calls(messages_for_api)
             return fact_check_response or "I couldn't verify that message right now."
         except Exception as e:
             logger.error("Error in LLM call during forwarded message fact-check: %s", e, exc_info=True)

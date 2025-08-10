@@ -475,6 +475,14 @@ class DatabaseManager:
             commit=True,
         )
 
+    async def log_fact_check(self, chat_id: int, message_id: int, claim_text: str, verdict: str, confidence: float):
+        """Persist fact-check outcomes for auditing."""
+        await self.execute_query(
+            "INSERT INTO FactCheckLog (ChatID, MessageID, ClaimText, Verdict, Confidence) VALUES (?, ?, ?, ?, ?)",
+            (chat_id, message_id, claim_text, verdict, confidence),
+            commit=True,
+        )
+
 def initialize_database(): # This function defines and uses DatabaseManager locally
     if not config.DB_CONNECTION_STRING:
         logger.warning("Cannot initialize database: Connection string not configured.")
@@ -512,6 +520,8 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "VerifiedUsers": "CREATE TABLE VerifiedUsers (UserID BIGINT PRIMARY KEY, VerifiedAt DATETIME2 DEFAULT GETDATE());",
         "ModerationLog": "CREATE TABLE ModerationLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, UserID BIGINT NULL, MessageID BIGINT NOT NULL, Categories NVARCHAR(255) NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "IX_ModerationLog_ChatID_Timestamp": "CREATE INDEX IX_ModerationLog_ChatID_Timestamp ON ModerationLog (ChatID, Timestamp DESC);",
+        "FactCheckLog": "CREATE TABLE FactCheckLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, MessageID BIGINT NULL, ClaimText NVARCHAR(MAX) NOT NULL, Verdict NVARCHAR(50) NOT NULL, Confidence FLOAT NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
+        "IX_FactCheckLog_ChatID_Timestamp": "CREATE INDEX IX_FactCheckLog_ChatID_Timestamp ON FactCheckLog (ChatID, Timestamp DESC);",
         # ------------------------------------------------------------------
         # Advanced karma system tables
         # ------------------------------------------------------------------
