@@ -48,9 +48,13 @@ from telegram.ext import (
 )
 from ..utils.message_utils import get_text
 import httpx
+import logging
+from ..utils.database import DatabaseManager
 
 # Filter for messages that contain either plain text or a caption
 TEXT_OR_CAPTION = (filters.TEXT & ~filters.COMMAND) | filters.CAPTION
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -304,11 +308,13 @@ class FactCheckBot:
         fc: FactChecker,
         satire_detector: Optional[SatireDetector] = None,
         cfg_reader: Callable[[int], Dict[str, object]] | None = None,
+        db_manager: Optional[DatabaseManager] = None,
     ) -> None:
         self.app = app
         self.fc = fc
         self.satire = satire_detector or SatireDetector(lambda _chat_id: {})
         self.cfg_reader = cfg_reader or (lambda _chat_id: {})
+        self.db_manager = db_manager
 
     # Public API -------------------------------------------------------------
     def register(self) -> None:
@@ -366,6 +372,18 @@ class FactCheckBot:
             return
 
         verdict = await self.fc.research(claim)
+
+        if self.db_manager and update.effective_chat and update.effective_message:
+            try:
+                await self.db_manager.log_fact_check(
+                    update.effective_chat.id,
+                    update.effective_message.message_id,
+                    claim.text_orig,
+                    verdict.label,
+                    verdict.confidence,
+                )
+            except Exception as e:
+                logger.error(f"Failed to log fact check: {e}", exc_info=True)
 
         try:
             if verdict.label in ("true", "mostly_true"):

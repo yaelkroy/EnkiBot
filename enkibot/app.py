@@ -127,6 +127,7 @@ class EnkiBotApplication:
             fc=self.fact_checker,
             satire_detector=SatireDetector(_default_fact_cfg),
             cfg_reader=_default_fact_cfg,
+            db_manager=self.db_manager,
         )
         self.fact_check_bot.register()
 
