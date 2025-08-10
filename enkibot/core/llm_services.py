@@ -29,7 +29,11 @@
 
 import logging
 import httpx
-import openai
+from types import SimpleNamespace
+try:  # pragma: no cover - optional dependency
+    import openai
+except Exception:  # pragma: no cover
+    openai = SimpleNamespace(AsyncOpenAI=None)
 import asyncio
 import time
 from typing import List, Dict, Optional, Any, Tuple

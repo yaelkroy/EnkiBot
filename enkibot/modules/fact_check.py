@@ -49,7 +49,11 @@ from ..utils.message_utils import get_text
 from ..core.llm_services import LLMServices
 import logging
 import json
-import openai
+from types import SimpleNamespace
+try:  # pragma: no cover - optional dependency
+    import openai
+except Exception:  # pragma: no cover
+    openai = SimpleNamespace()
 from .. import config
 from ..utils.database import DatabaseManager
 from ..utils.lang_router import normalize as normalize_unicode
