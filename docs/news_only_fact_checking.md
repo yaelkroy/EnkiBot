@@ -36,7 +36,7 @@ This document defines a **best‑of‑the‑best** mechanism for fact‑checking
 
 A two‑stage gate: cheap heuristics first, then a lightweight classifier. High recall; multilingual.
 
-* **Heuristic pass** (accept if any matches): source signals, headline+lede pattern, event time/place, quotative verbs, crisis lexicon, or article screenshot cues.
+* **Heuristic pass** (accept if any matches): source signals, headline+lede pattern, event time/place, quotative verbs, crisis lexicon, or article screenshot cues.  The reference implementation ships with RU/UK/EN verb and location lexicons (e.g., *заявил/сообщил*, *Абхазия*, *Москва*) to increase recall on regional news.
 * **Classifier pass**: tiny multilingual model trained on news vs. commentary/opinion/jokes.
 * **Policy**: `P_news ≥ 0.70` → proceed; `0.55–0.70` → *hold* (silent) and show the author a private **“Check as news?”** button; `<0.55` → *reject* silently.
 
