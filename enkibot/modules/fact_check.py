@@ -47,8 +47,10 @@ from telegram.ext import (
     filters,
 )
 from ..utils.message_utils import get_text
+import httpx
 
-TEXT_OR_CAPTION = (filters.TEXT & ~filters.COMMAND) | filters.Caption(True)
+# Filter for messages that contain either plain text or a caption
+TEXT_OR_CAPTION = (filters.TEXT & ~filters.COMMAND) | filters.CAPTION
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -123,6 +125,49 @@ class Fetcher:
 
     async def reverse_image(self, claim: Claim) -> List[Evidence]:
         return []
+
+
+class DuckDuckGoFetcher(Fetcher):
+    """Simple web fetcher using DuckDuckGo's public API."""
+
+    async def fact_checker_search(self, claim: Claim) -> List[Evidence]:
+        return await self.general_search(claim)
+
+    async def general_search(self, claim: Claim) -> List[Evidence]:
+        try:
+            resp = await httpx.get(
+                "https://r.jina.ai/http://api.duckduckgo.com/",
+                params={"q": claim.text_norm, "format": "json", "no_redirect": "1", "no_html": "1"},
+                timeout=10.0,
+            )
+            data = resp.json()
+            evidences: List[Evidence] = []
+            for topic in data.get("RelatedTopics", [])[:5]:
+                url = topic.get("FirstURL")
+                text = topic.get("Text", "")
+                if not url:
+                    continue
+                domain = url.split("/")[2] if "//" in url else url
+                stance = (
+                    "refute"
+                    if any(k in text.lower() for k in ["fake", "hoax", "debunk", "false"])
+                    else "support"
+                )
+                evidences.append(
+                    Evidence(
+                        url=url,
+                        domain=domain,
+                        stance=stance,
+                        note=text,
+                        published_at=None,
+                        snapshot_url=None,
+                        tier=None,
+                        score=1.0,
+                    )
+                )
+            return evidences
+        except Exception:
+            return []
 
 
 class StanceModel:
@@ -314,16 +359,27 @@ class FactCheckBot:
         await self._run_check(update, ctx, text)
 
     async def _run_check(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+        """Run a fact check and react to the original message."""
+
         claim = await self.fc.extract_claim(text)
         if not claim:
-            await update.effective_message.reply_text("No checkable claim detected.")
             return
-        ph = await update.effective_message.reply_text("\ud83d\udd0d Researching\u2026")
+
         verdict = await self.fc.research(claim)
-        kb = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Sources", url=e.url)] for e in verdict.sources]
-        )
-        await ph.edit_text(self._format_card(verdict), reply_markup=kb, disable_web_page_preview=False)
+
+        try:
+            if verdict.label in ("true", "mostly_true"):
+                await update.effective_message.set_reaction("👍")
+            else:
+                await update.effective_message.set_reaction("👎")
+                await update.effective_message.reply_text(
+                    verdict.summary, disable_web_page_preview=True
+                )
+        except Exception:  # pragma: no cover - reaction support may vary
+            if verdict.label not in ("true", "mostly_true"):
+                await update.effective_message.reply_text(
+                    verdict.summary, disable_web_page_preview=True
+                )
 
     def _format_card(self, v: Verdict) -> str:
         icon = {
