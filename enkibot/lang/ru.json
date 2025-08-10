@@ -201,5 +201,20 @@
     "Friday": "Пятница",
     "Saturday": "Суббота",
     "Sunday": "Воскресенье"
-  }
+  },
+  "factconfig_tab_preset": "Пресет",
+  "factconfig_tab_policy": "Политика",
+  "factconfig_tab_limits": "Лимиты",
+  "factconfig_tab_auto": "Авто",
+  "factconfig_tab_danger": "Опасно",
+  "factconfig_export_btn": "Экспорт",
+  "factconfig_apply_btn": "Применить",
+  "factconfig_title": "Настройки фактчека:",
+  "factconfig_update_ok": "Конфигурация обновлена.",
+  "factconfig_checking": "Проверяю…",
+  "factconfig_nothing_to_check": "Нечего проверять.",
+  "factconfig_export_ok": "Конфигурация экспортирована.",
+  "factconfig_export_fail": "Не удалось экспортировать конфигурацию.",
+  "factconfig_apply_ok": "Конфигурация применена.",
+  "factconfig_apply_fail": "Не удалось применить конфигурацию."
 }

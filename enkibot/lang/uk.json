@@ -201,5 +201,20 @@
     "Friday": "П’ятниця",
     "Saturday": "Субота",
     "Sunday": "Неділя"
-  }
+  },
+  "factconfig_tab_preset": "Пресет",
+  "factconfig_tab_policy": "Політика",
+  "factconfig_tab_limits": "Ліміти",
+  "factconfig_tab_auto": "Авто",
+  "factconfig_tab_danger": "Небезпека",
+  "factconfig_export_btn": "Експорт",
+  "factconfig_apply_btn": "Застосувати",
+  "factconfig_title": "Налаштування фактчеку:",
+  "factconfig_update_ok": "Конфігурацію оновлено.",
+  "factconfig_checking": "Перевіряю…",
+  "factconfig_nothing_to_check": "Нічого перевіряти.",
+  "factconfig_export_ok": "Конфігурацію експортовано.",
+  "factconfig_export_fail": "Не вдалося експортувати конфігурацію.",
+  "factconfig_apply_ok": "Конфігурацію застосовано.",
+  "factconfig_apply_fail": "Не вдалося застосувати конфігурацію."
 }
