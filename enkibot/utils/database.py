@@ -484,12 +484,33 @@ class DatabaseManager:
         confidence: float,
         track: str = "news",
     ):
-        """Persist fact-check outcomes for auditing."""
-        await self.execute_query(
-            "INSERT INTO FactCheckLog (ChatID, MessageID, ClaimText, Verdict, Confidence, Track) VALUES (?, ?, ?, ?, ?, ?)",
-            (chat_id, message_id, claim_text, verdict, confidence, track),
-            commit=True,
+        """Persist fact-check outcomes for auditing.
+
+        Some deployments may still use an older ``FactCheckLog`` schema
+        without the ``Track`` column.  We check for the column's existence
+        before inserting to maintain backward compatibility.
+        """
+
+        # Detect if the optional 'Track' column exists in the database
+        column_exists = await self.execute_query(
+            "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'FactCheckLog' AND COLUMN_NAME = 'Track'",
+            fetch_one=True,
         )
+
+        if column_exists:
+            query = (
+                "INSERT INTO FactCheckLog (ChatID, MessageID, ClaimText, Verdict, Confidence, Track) "
+                "VALUES (?, ?, ?, ?, ?, ?)"
+            )
+            params = (chat_id, message_id, claim_text, verdict, confidence, track)
+        else:
+            query = (
+                "INSERT INTO FactCheckLog (ChatID, MessageID, ClaimText, Verdict, Confidence) "
+                "VALUES (?, ?, ?, ?, ?)"
+            )
+            params = (chat_id, message_id, claim_text, verdict, confidence)
+
+        await self.execute_query(query, params, commit=True)
 
     async def log_fact_gate(
         self, chat_id: int, message_id: int, p_news: float, p_book: float
