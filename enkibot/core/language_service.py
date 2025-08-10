@@ -301,20 +301,66 @@ class LanguageService:
 
         # Logic to use LLM detection result
         if llm_detected_primary_lang and llm_detected_confidence >= LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD:
-            logger.info(f"LLM confidently detected primary lang '{llm_detected_primary_lang}' (conf: {llm_detected_confidence:.2f}).")
+            logger.info(
+                f"LLM confidently detected primary lang '{llm_detected_primary_lang}' "
+                f"(conf: {llm_detected_confidence:.2f})."
+            )
             final_candidate_lang_code = llm_detected_primary_lang
         else:
             if llm_detected_primary_lang:
-                 logger.warning(f"LLM detected lang '{llm_detected_primary_lang}' but confidence ({llm_detected_confidence:.2f}) "
-                               f"< threshold ({LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD}). Using current/default: {final_candidate_lang_code}")
-            # If no LLM detection or low confidence, use simple heuristics based
-            # on the characters present in the message. This ensures languages
-            # like Russian are still recognised even when the LLM is
-            # unavailable.
-            if re.search(r"[\u0400-\u04FF]", aggregated_text_for_llm_prompt_check):
+                logger.warning(
+                    f"LLM detected lang '{llm_detected_primary_lang}' but confidence "
+                    f"({llm_detected_confidence:.2f}) < threshold "
+                    f"({LLM_LANG_DETECTION_CONFIDENCE_THRESHOLD}). Using current/default: {final_candidate_lang_code}"
+                )
+
+            # Heuristic detection prioritising the latest message.
+            def _contains_cyrillic(text: str) -> bool:
+                return bool(re.search(r"[\u0400-\u04FF]", text))
+
+            def _contains_uk_chars(text: str) -> bool:
+                return bool(re.search(r"[ґєії]", text.lower()))
+
+            def _contains_latin(text: str) -> bool:
+                return bool(re.search(r"[A-Za-z]", text))
+
+            def _looks_like_translit_ru(text: str) -> bool:
+                translit_words = {
+                    "privet",
+                    "poka",
+                    "spasibo",
+                    "kak",
+                    "dela",
+                    "zdravstv",
+                }
+                t = text.lower()
+                return any(word in t for word in translit_words)
+
+            latest_only = latest_message_payload or ""
+
+            if _contains_cyrillic(latest_only):
+                final_candidate_lang_code = "uk" if _contains_uk_chars(latest_only) else "ru"
+            elif _looks_like_translit_ru(latest_only):
                 final_candidate_lang_code = "ru"
-            elif re.search(r"[A-Za-z]", aggregated_text_for_llm_prompt_check):
+            elif _contains_latin(latest_only):
                 final_candidate_lang_code = "en"
+            elif _contains_cyrillic(aggregated_text_for_llm_prompt_check):
+                final_candidate_lang_code = (
+                    "uk"
+                    if _contains_uk_chars(aggregated_text_for_llm_prompt_check)
+                    else "ru"
+                )
+            elif _contains_latin(aggregated_text_for_llm_prompt_check):
+                final_candidate_lang_code = "en"
+
+        if update_context and update_context.effective_user:
+            user_lang = getattr(update_context.effective_user, "language_code", None)
+            if (
+                user_lang
+                and final_candidate_lang_code == self.default_language
+                and user_lang in self.language_packs
+            ):
+                final_candidate_lang_code = user_lang
 
         unsupported_codes = ("", "und", "undefined", "none")
         if final_candidate_lang_code in unsupported_codes:
