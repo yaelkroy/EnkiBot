@@ -613,7 +613,8 @@ class TelegramHandlerService:
 
             result = self.nsfw_classifier.classify(temp_file_path)
             nsfw_score = result.get(temp_file_path, {}).get('unsafe', 0)
-            if nsfw_score >= bot_config.NSFW_DETECTION_THRESHOLD:
+            threshold = await self.db_manager.get_nsfw_threshold(chat_id)
+            if nsfw_score >= threshold:
                 try:
                     await update.message.delete()
                     if update.effective_user:
@@ -1222,6 +1223,25 @@ class TelegramHandlerService:
         status = "enabled" if enabled else "disabled"
         await update.message.reply_text(f"NSFW filter {status} for this chat.")
 
+    async def set_nsfw_threshold_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.message or not update.effective_user:
+            return
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        if not await self._is_user_admin(chat_id, user_id, context):
+            return
+        if not context.args:
+            await update.message.reply_text("Usage: /nsfw_threshold <0.0-1.0>")
+            return
+        try:
+            threshold = float(context.args[0])
+        except ValueError:
+            await update.message.reply_text("Threshold must be a number between 0 and 1.")
+            return
+        threshold = max(0.0, min(1.0, threshold))
+        await self.db_manager.set_nsfw_threshold(chat_id, threshold)
+        await update.message.reply_text(f"NSFW threshold set to {threshold:.2f} for this chat.")
+
     async def set_spam_threshold_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.effective_user:
             return
@@ -1346,6 +1366,7 @@ class TelegramHandlerService:
         self.application.add_handler(CommandHandler("warns_list", self.warns_list_command))
         self.application.add_handler(CommandHandler(["rm_warn", "clear_warn"], self.remove_warn_command))
         self.application.add_handler(CommandHandler("toggle_nsfw", self.toggle_nsfw_filter_command))
+        self.application.add_handler(CommandHandler("nsfw_threshold", self.set_nsfw_threshold_command))
         self.application.add_handler(CommandHandler("setspamthreshold", self.set_spam_threshold_command))
         self.application.add_handler(CommandHandler("toggle_ai", self.toggle_ai_command))
         self.application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.handle_new_chat_members))

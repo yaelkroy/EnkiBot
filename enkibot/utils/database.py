@@ -286,15 +286,21 @@ class DatabaseManager:
             commit=True,
         )
 
-    async def _ensure_nsfw_column(self):
+    async def _ensure_nsfw_columns(self):
+        """Ensure NSFW-related columns exist in ChatSettings."""
         await self.execute_query(
             "IF COL_LENGTH('ChatSettings', 'NSFWFilterEnabled') IS NULL "
             "ALTER TABLE ChatSettings ADD NSFWFilterEnabled BIT NOT NULL DEFAULT 0;",
             commit=True,
         )
+        await self.execute_query(
+            f"IF COL_LENGTH('ChatSettings', 'NSFWThreshold') IS NULL "
+            f"ALTER TABLE ChatSettings ADD NSFWThreshold FLOAT NOT NULL DEFAULT {config.NSFW_DETECTION_THRESHOLD};",
+            commit=True,
+        )
 
     async def get_nsfw_filter_enabled(self, chat_id: int) -> bool:
-        await self._ensure_nsfw_column()
+        await self._ensure_nsfw_columns()
         row = await self.execute_query(
             "SELECT NSFWFilterEnabled FROM ChatSettings WHERE ChatID = ?",
             (chat_id,),
@@ -303,20 +309,57 @@ class DatabaseManager:
         if row and hasattr(row, 'NSFWFilterEnabled'):
             return bool(row.NSFWFilterEnabled)
         await self.execute_query(
-            "INSERT INTO ChatSettings (ChatID, SpamVoteThreshold, NSFWFilterEnabled) VALUES (?, ?, ?)",
-            (chat_id, config.DEFAULT_SPAM_VOTE_THRESHOLD, int(config.NSFW_FILTER_DEFAULT_ENABLED)),
+            "INSERT INTO ChatSettings (ChatID, SpamVoteThreshold, NSFWFilterEnabled, NSFWThreshold) VALUES (?, ?, ?, ?)",
+            (
+                chat_id,
+                config.DEFAULT_SPAM_VOTE_THRESHOLD,
+                int(config.NSFW_FILTER_DEFAULT_ENABLED),
+                config.NSFW_DETECTION_THRESHOLD,
+            ),
             commit=True,
         )
         return bool(config.NSFW_FILTER_DEFAULT_ENABLED)
 
     async def set_nsfw_filter_enabled(self, chat_id: int, enabled: bool):
-        await self._ensure_nsfw_column()
+        await self._ensure_nsfw_columns()
         await self.execute_query(
-            "MERGE ChatSettings AS t USING (VALUES(?,?,?)) AS s(ChatID,SpamVoteThreshold,NSFWFilterEnabled) "
+            "MERGE ChatSettings AS t USING (VALUES(?,?,?,?)) AS s(ChatID,SpamVoteThreshold,NSFWFilterEnabled,NSFWThreshold) "
             "ON t.ChatID=s.ChatID "
             "WHEN MATCHED THEN UPDATE SET NSFWFilterEnabled=s.NSFWFilterEnabled "
-            "WHEN NOT MATCHED THEN INSERT (ChatID,SpamVoteThreshold,NSFWFilterEnabled) VALUES (s.ChatID,s.SpamVoteThreshold,s.NSFWFilterEnabled);",
-            (chat_id, config.DEFAULT_SPAM_VOTE_THRESHOLD, int(enabled)),
+            "WHEN NOT MATCHED THEN INSERT (ChatID,SpamVoteThreshold,NSFWFilterEnabled,NSFWThreshold) VALUES (s.ChatID,s.SpamVoteThreshold,s.NSFWFilterEnabled,s.NSFWThreshold);",
+            (chat_id, config.DEFAULT_SPAM_VOTE_THRESHOLD, int(enabled), config.NSFW_DETECTION_THRESHOLD),
+            commit=True,
+        )
+
+    async def get_nsfw_threshold(self, chat_id: int) -> float:
+        await self._ensure_nsfw_columns()
+        row = await self.execute_query(
+            "SELECT NSFWThreshold FROM ChatSettings WHERE ChatID = ?",
+            (chat_id,),
+            fetch_one=True,
+        )
+        if row and hasattr(row, 'NSFWThreshold') and row.NSFWThreshold is not None:
+            return float(row.NSFWThreshold)
+        await self.execute_query(
+            "INSERT INTO ChatSettings (ChatID, SpamVoteThreshold, NSFWFilterEnabled, NSFWThreshold) VALUES (?, ?, ?, ?)",
+            (
+                chat_id,
+                config.DEFAULT_SPAM_VOTE_THRESHOLD,
+                int(config.NSFW_FILTER_DEFAULT_ENABLED),
+                config.NSFW_DETECTION_THRESHOLD,
+            ),
+            commit=True,
+        )
+        return float(config.NSFW_DETECTION_THRESHOLD)
+
+    async def set_nsfw_threshold(self, chat_id: int, threshold: float):
+        await self._ensure_nsfw_columns()
+        await self.execute_query(
+            "MERGE ChatSettings AS t USING (VALUES(?,?,?,?)) AS s(ChatID,SpamVoteThreshold,NSFWFilterEnabled,NSFWThreshold) "
+            "ON t.ChatID=s.ChatID "
+            "WHEN MATCHED THEN UPDATE SET NSFWThreshold=s.NSFWThreshold "
+            "WHEN NOT MATCHED THEN INSERT (ChatID,SpamVoteThreshold,NSFWFilterEnabled,NSFWThreshold) VALUES (s.ChatID,s.SpamVoteThreshold,s.NSFWFilterEnabled,s.NSFWThreshold);",
+            (chat_id, config.DEFAULT_SPAM_VOTE_THRESHOLD, int(config.NSFW_FILTER_DEFAULT_ENABLED), threshold),
             commit=True,
         )
 
@@ -410,7 +453,7 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "IX_ChatLinkStats_ChatID_Count": "CREATE INDEX IX_ChatLinkStats_ChatID_Count ON ChatLinkStats (ChatID, LinkCount DESC);",
         "ErrorLog": "CREATE TABLE ErrorLog (ErrorID INT IDENTITY(1,1) PRIMARY KEY, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, LogLevel NVARCHAR(50) NOT NULL, LoggerName NVARCHAR(255) NULL, ModuleName NVARCHAR(255) NULL, FunctionName NVARCHAR(255) NULL, LineNumber INT NULL, ErrorMessage NVARCHAR(MAX) NOT NULL, ExceptionInfo NVARCHAR(MAX) NULL);",
         "IX_ErrorLog_Timestamp": "CREATE INDEX IX_ErrorLog_Timestamp ON ErrorLog (Timestamp DESC);",
-        "ChatSettings": "CREATE TABLE ChatSettings (ChatID BIGINT PRIMARY KEY, SpamVoteThreshold INT NOT NULL DEFAULT 3, NSFWFilterEnabled BIT NOT NULL DEFAULT 0);",
+        "ChatSettings": f"CREATE TABLE ChatSettings (ChatID BIGINT PRIMARY KEY, SpamVoteThreshold INT NOT NULL DEFAULT 3, NSFWFilterEnabled BIT NOT NULL DEFAULT 0, NSFWThreshold FLOAT NOT NULL DEFAULT {config.NSFW_DETECTION_THRESHOLD});",
         "SpamReports": "CREATE TABLE SpamReports (ReportID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, TargetUserID BIGINT NOT NULL, ReporterUserID BIGINT NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, CONSTRAINT UQ_SpamReports UNIQUE (ChatID, TargetUserID, ReporterUserID));",
         "IX_SpamReports_Chat_Target": "CREATE INDEX IX_SpamReports_Chat_Target ON SpamReports (ChatID, TargetUserID);",
         "KarmaLog": "CREATE TABLE KarmaLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, GiverUserID BIGINT NOT NULL, ReceiverUserID BIGINT NOT NULL, Points INT NOT NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
