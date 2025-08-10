@@ -48,7 +48,9 @@ class LLMServices:
         logger.info("LLMServices __init__ STARTING")
         
         self.openai_api_key = openai_api_key
-        self.openai_model_id = openai_model_id 
+        self.openai_model_id = openai_model_id
+        self.openai_deep_research_model_id = config.OPENAI_DEEP_RESEARCH_MODEL_ID
+        self.openai_embedding_model_id = config.OPENAI_EMBEDDING_MODEL_ID
         self.openai_classification_model_id = config.OPENAI_CLASSIFICATION_MODEL_ID
         self.openai_translation_model_id = config.OPENAI_TRANSLATION_MODEL_ID
         self.openai_dalle_model_id = config.OPENAI_DALLE_MODEL_ID
@@ -109,10 +111,10 @@ class LLMServices:
         cost_per_1k = self.cost_per_1k_tokens.get(provider, 0.0)
         metrics.record(latency, tokens, cost_per_1k)
 
-    async def call_openai_llm(self, messages: List[Dict[str, str]], 
-                              model_id: Optional[str] = None, 
-                              temperature: float = 0.7, 
-                              max_tokens: int = 2000, 
+    async def call_openai_llm(self, messages: List[Dict[str, str]],
+                              model_id: Optional[str] = None,
+                              temperature: float = 0.7,
+                              max_tokens: int = 2000,
                               **kwargs) -> Optional[str]:
         if not self.is_provider_configured("openai"):
             logger.warning("OpenAI client not initialized or API key missing. Cannot make call.")
@@ -136,6 +138,29 @@ class LLMServices:
             logger.error(f"OpenAI API Error (model: {actual_model_id}): {e.message}", exc_info=False)
         except Exception as e:
             logger.error(f"Unexpected error with OpenAI API (model: {actual_model_id}): {e}", exc_info=True)
+        return None
+
+    async def embed_texts_openai(self, texts: List[str], model_id: Optional[str] = None) -> Optional[List[List[float]]]:
+        """Return embeddings for ``texts`` using OpenAI's embedding endpoint.
+
+        Falls back to ``None`` if OpenAI is not configured or an error occurs.
+        """
+        if not self.is_provider_configured("openai"):
+            logger.warning("OpenAI client not initialized or API key missing. Cannot create embeddings.")
+            return None
+        actual_model_id = model_id or self.openai_embedding_model_id
+        try:
+            start = time.perf_counter()
+            response = await self.openai_async_client.embeddings.create(model=actual_model_id, input=texts)
+            latency = time.perf_counter() - start
+            tokens = getattr(response, "usage", {}).get("total_tokens", 0)
+            self._record_metrics("OpenAI", latency, tokens)
+            if response.data:
+                return [item.embedding for item in response.data]
+        except openai.APIError as e:
+            logger.error(f"OpenAI Embedding API Error (model: {actual_model_id}): {e.message}")
+        except Exception as e:
+            logger.error(f"Unexpected error during OpenAI embedding call (model: {actual_model_id}): {e}", exc_info=True)
         return None
 
     async def call_llm_api(self, provider_name: str, api_key: Optional[str], endpoint_url: Optional[str], 

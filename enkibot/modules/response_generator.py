@@ -92,7 +92,7 @@ class ResponseGenerator:
             if self.llm_services.is_provider_configured("openai"):
                 fact_check_response = await self.llm_services.call_openai_llm(
                     messages_for_api,
-                    model_id=config.OPENAI_MODEL_ID,
+                    model_id=self.llm_services.openai_deep_research_model_id,
                     temperature=0.0,
                     max_tokens=1000,
                 )

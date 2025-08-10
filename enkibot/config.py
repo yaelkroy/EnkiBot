@@ -116,12 +116,13 @@ DB_CONNECTION_STRING = (
 # --- LLM Provider API Keys & Models ---
 # OpenAI
 OPENAI_API_KEY = os.getenv('ENKI_BOT_OPENAI_API_KEY')
-OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4o')                 # General purpose (if not overridden by task-specific models)
+OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4.1-mini')                 # General orchestrator
+OPENAI_DEEP_RESEARCH_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_DEEP_RESEARCH_MODEL_ID', 'o3-deep-research')
+OPENAI_EMBEDDING_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_EMBEDDING_MODEL_ID', 'text-embedding-3-large')
 OPENAI_CLASSIFICATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_CLASSIFICATION_MODEL_ID', 'gpt-3.5-turbo') # For faster tasks like intent classification
 OPENAI_TRANSLATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_TRANSLATION_MODEL_ID', 'gpt-4o-mini')      # For language pack creation
-OPENAI_MULTIMODAL_IMAGE_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MULTIMODAL_IMAGE_MODEL_ID', 'gpt-4.1-mini')
+OPENAI_MULTIMODAL_IMAGE_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MULTIMODAL_IMAGE_MODEL_ID', 'gpt-4o')
 OPENAI_DALLE_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_DALLE_MODEL_ID', 'dall-e-3')
-OPENAI_TRANSLATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_TRANSLATION_MODEL_ID', 'gpt-4o-mini')
 OPENAI_WHISPER_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_WHISPER_MODEL_ID', 'whisper-1')
 DEFAULT_IMAGE_N = 1
 DEFAULT_IMAGE_SIZE = "1024x1024"
