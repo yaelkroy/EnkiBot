@@ -186,7 +186,9 @@ class OpenAIWebFetcher(Fetcher):
         return await self.general_search(claim)
 
     async def general_search(self, claim: Claim) -> List[Evidence]:
+        logger.debug("Web fetcher: starting search for claim '%s'", claim.text_norm)
         if not config.OPENAI_API_KEY:
+            logger.warning("Web fetcher: OPENAI_API_KEY missing, skipping web search")
             return []
         client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY)
         try:
@@ -208,7 +210,9 @@ class OpenAIWebFetcher(Fetcher):
                 **extra,
             )
             items = json.loads(resp.output_text)
-        except Exception:
+            logger.debug("Web fetcher: received %d search items", len(items))
+        except Exception as e:
+            logger.error("Web fetcher: search failed: %s", e, exc_info=True)
             return []
         evidences: List[Evidence] = []
         for item in items[:5]:
@@ -418,17 +422,21 @@ class FactChecker:
         self.primary_hunter = primary_hunter
 
     async def extract_claim(self, text: str) -> Optional[Claim]:
+        logger.debug("Extracting claim from text: %r", text)
         if not text or len(text) < 10:
+            logger.debug("Claim extraction aborted: text too short")
             return None
         urls = URL_RE.findall(text)
         text_norm = normalize_text(text)
-        return Claim(
+        claim = Claim(
             text_norm=text_norm,
             text_orig=text,
             lang=None,
             urls=urls,
             hash=hash_claim(text_norm, urls),
         )
+        logger.debug("Claim extracted with hash %s and %d URLs", claim.hash, len(urls))
+        return claim
 
     async def extract_quote(self, text: str) -> Optional[Quote]:
         """Extract a quotation and optional attribution."""
@@ -453,7 +461,9 @@ class FactChecker:
 
     async def _llm_verdict(self, claim: Claim) -> Verdict:
         """Use LLM to generate a verdict for the claim."""
+        logger.debug("LLM verdict: generating for claim '%s'", claim.text_orig)
         if not self.llm_services:
+            logger.warning("LLM verdict: llm_services not configured")
             return Verdict(
                 label="unverified",
                 confidence=0.0,
@@ -476,8 +486,9 @@ class FactChecker:
             completion = await self.llm_services.call_openai_llm(
                 messages, temperature=0.0, max_tokens=300
             )
+            logger.debug("LLM verdict: received completion %r", completion)
         except Exception as e:
-            logger.error(f"LLM fact-check failed: {e}", exc_info=True)
+            logger.error("LLM verdict: call failed: %s", e, exc_info=True)
             completion = None
 
         label = "unverified"
@@ -492,6 +503,12 @@ class FactChecker:
             except Exception:
                 summary = completion.strip()
 
+        logger.debug(
+            "LLM verdict: label=%s confidence=%.2f summary=%r",
+            label,
+            confidence,
+            summary,
+        )
         return Verdict(label=label, confidence=confidence, summary=summary, sources=[])
 
     async def _llm_quote_verdict(self, quote: Quote) -> Verdict:
@@ -539,32 +556,51 @@ class FactChecker:
         return Verdict(label=label, confidence=confidence, summary=summary, sources=[])
 
     async def research(self, claim: Claim | Quote, track: str = "news") -> Verdict:
+        logger.debug("Research: track=%s", track)
         if track == "book":
+            logger.debug("Research: delegating to quote verifier")
             return await self._llm_quote_verdict(claim)  # type: ignore[arg-type]
 
         evidence: List[Evidence] = []
-        if isinstance(claim, Claim) and self.primary_hunter:
-            try:
-                hits = await self.primary_hunter.hunt(claim.text_norm, claim.lang)
-                for h in hits:
-                    evidence.append(
-                        Evidence(
-                            url=h.url,
-                            domain=h.domain,
-                            stance="na",
-                            note=h.title,
-                            published_at=None,
-                            snapshot_url=None,
-                            tier=h.tier,
-                            score=1.0,
+        if isinstance(claim, Claim):
+            logger.debug("Research: claim='%s' lang=%s", claim.text_norm, claim.lang)
+            if self.fetcher:
+                try:
+                    web_hits = await self.fetcher.fact_checker_search(claim)
+                    logger.debug("Research: web fetcher returned %d items", len(web_hits))
+                    evidence.extend(web_hits)
+                except Exception as e:
+                    logger.error("Research: web fetcher error: %s", e, exc_info=True)
+            else:
+                logger.debug("Research: no web fetcher configured")
+
+            if self.primary_hunter:
+                try:
+                    hits = await self.primary_hunter.hunt(claim.text_norm, claim.lang)
+                    logger.debug("Research: primary source hunter returned %d hits", len(hits))
+                    for h in hits:
+                        evidence.append(
+                            Evidence(
+                                url=h.url,
+                                domain=h.domain,
+                                stance="na",
+                                note=h.title,
+                                published_at=None,
+                                snapshot_url=None,
+                                tier=h.tier,
+                                score=1.0,
+                            )
                         )
-                    )
-                if evidence:
-                    evidence = await self.stance.classify(claim, evidence)
-            except Exception:
-                evidence = []
+                    if evidence:
+                        evidence = await self.stance.classify(claim, evidence)
+                        logger.debug("Research: stance model processed evidence")
+                except Exception as e:
+                    logger.error("Research: primary source hunter error: %s", e, exc_info=True)
 
         verdict = await self._llm_verdict(claim)  # type: ignore[arg-type]
+        logger.debug(
+            "Research: verdict=%s confidence=%.2f", verdict.label, verdict.confidence
+        )
         verdict.sources = evidence
         return verdict
 
@@ -693,15 +729,19 @@ class FactCheckBot:
         track: str = "news",
     ) -> None:
         """Run a fact check and react to the target message."""
-
+        logger.debug("Run check: track=%s text=%r", track, text)
         if track == "book":
             claim = await self.fc.extract_quote(text)
         else:
             claim = await self.fc.extract_claim(text)
         if not claim:
+            logger.debug("Run check: claim extraction failed")
             return
 
         verdict = await self.fc.research(claim, track=track)
+        logger.debug(
+            "Run check: verdict label=%s confidence=%.2f", verdict.label, verdict.confidence
+        )
 
         target_msg = message or update.effective_message
         if self.db_manager and update.effective_chat and target_msg:
