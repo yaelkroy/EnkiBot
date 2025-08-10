@@ -126,6 +126,13 @@ class TelegramHandlerService:
         # Registry of default commands for help text and Telegram registration
         self.default_commands: Dict[str, Dict[str, str]] = {}
 
+        # Map reaction emoji to handler coroutines
+        self.reaction_handlers: Dict[str, Any] = {
+            "🔄": self._handle_regenerate_reaction,
+            "➕": self._handle_expand_reaction,
+            "📝": self._handle_summary_reaction,
+        }
+
         # Instantiate specialized handlers
         self.weather_handler = WeatherIntentHandler(
             language_service=self.language_service,
@@ -659,6 +666,37 @@ class TelegramHandlerService:
             sign = "+" if delta > 0 else ""
             await message.reply_text(f"{sign}{delta} to {receiver_display} (total {total:+})")
         return True
+
+    async def _handle_regenerate_reaction(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle regeneration request via emoji reaction."""
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Regenerating response..."
+        )
+
+    async def _handle_expand_reaction(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle expansion request via emoji reaction."""
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Expanding on previous response..."
+        )
+
+    async def _handle_summary_reaction(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle summarization request via emoji reaction."""
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Generating summary..."
+        )
+
+    async def reaction_router(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Route emoji reactions to configured actions."""
+        reaction_update = getattr(update, "message_reaction", None)
+        if not reaction_update or not reaction_update.new_reaction:
+            return
+        emoji = reaction_update.new_reaction[0].emoji
+        handler = self.reaction_handlers.get(emoji)
+        if handler:
+            await handler(update, context)
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
         if not update.message or not update.message.text or not update.effective_chat or not update.effective_user:
@@ -1398,6 +1436,7 @@ class TelegramHandlerService:
         self.application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, self.handle_photo_message))
         self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
         self.application.add_handler(MessageHandler(filters.VIDEO_NOTE, self.handle_video_note_message))
-        
+        self.application.add_handler(MessageHandler(filters.UpdateType.MESSAGE_REACTION, self.reaction_router))
+
         self.application.add_error_handler(self.error_handler)
         logger.info("TelegramHandlerService: All handlers registered.")
