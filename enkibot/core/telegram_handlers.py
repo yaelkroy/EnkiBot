@@ -32,6 +32,7 @@ from types import SimpleNamespace
 from telegram import Update, ReplyKeyboardRemove, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram.constants import ChatAction
+from telegram.helpers import mention_html
 import re
 import random
 
@@ -723,12 +724,12 @@ class TelegramHandlerService:
             lines.append("Top users:")
             for u in stats['top_users']:
                 name = f"@{u['username']}" if u.get('username') else f"@{u['user_id']}"
-                lines.append(f"- {name}: {u['count']}")
+                lines.append(f"- {mention_html(u['user_id'], name)}: {u['count']}")
         if stats['top_links']:
             lines.append("Top links:")
             for l in stats['top_links']:
                 lines.append(f"- {l['domain']}: {l['count']}")
-        await update.message.reply_text("\n".join(lines))
+        await update.message.reply_html("\n".join(lines))
 
     async def my_stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.effective_chat or not update.effective_user:
