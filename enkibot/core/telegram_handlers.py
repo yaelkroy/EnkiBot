@@ -291,7 +291,12 @@ class TelegramHandlerService:
             user_id,
             permissions=ChatPermissions(
                 can_send_messages=True,
-                can_send_media_messages=True,
+                can_send_audios=True,
+                can_send_documents=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=True,
+                can_send_voice_notes=True,
                 can_send_polls=True,
                 can_send_other_messages=True,
                 can_add_web_page_previews=True,
@@ -340,7 +345,12 @@ class TelegramHandlerService:
                     member.id,
                     permissions=ChatPermissions(
                         can_send_messages=False,
-                        can_send_media_messages=False,
+                        can_send_audios=False,
+                        can_send_documents=False,
+                        can_send_photos=False,
+                        can_send_videos=False,
+                        can_send_video_notes=False,
+                        can_send_voice_notes=False,
                         can_send_polls=False,
                         can_send_other_messages=False,
                         can_add_web_page_previews=False,
@@ -1123,9 +1133,18 @@ class TelegramHandlerService:
         if context.args and context.args[0].isdigit():
             duration = int(context.args[0])
         until_date = datetime.utcnow() + timedelta(minutes=duration)
-        perms = ChatPermissions(can_send_messages=False, can_send_media_messages=False,
-                                can_send_polls=False, can_send_other_messages=False,
-                                can_add_web_page_previews=False)
+        perms = ChatPermissions(
+            can_send_messages=False,
+            can_send_audios=False,
+            can_send_documents=False,
+            can_send_photos=False,
+            can_send_videos=False,
+            can_send_video_notes=False,
+            can_send_voice_notes=False,
+            can_send_polls=False,
+            can_send_other_messages=False,
+            can_add_web_page_previews=False,
+        )
         try:
             await context.bot.restrict_chat_member(chat_id, target.id, permissions=perms, until_date=until_date)
             await update.message.reply_html(
@@ -1143,9 +1162,18 @@ class TelegramHandlerService:
         if not await self._is_user_admin(chat_id, invoker_id, context):
             return
         target = update.message.reply_to_message.from_user
-        perms = ChatPermissions(can_send_messages=True, can_send_media_messages=True,
-                                can_send_polls=True, can_send_other_messages=True,
-                                can_add_web_page_previews=True)
+        perms = ChatPermissions(
+            can_send_messages=True,
+            can_send_audios=True,
+            can_send_documents=True,
+            can_send_photos=True,
+            can_send_videos=True,
+            can_send_video_notes=True,
+            can_send_voice_notes=True,
+            can_send_polls=True,
+            can_send_other_messages=True,
+            can_add_web_page_previews=True,
+        )
         try:
             await context.bot.restrict_chat_member(chat_id, target.id, permissions=perms)
             await update.message.reply_html(
