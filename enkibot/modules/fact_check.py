@@ -29,7 +29,6 @@ structure described in the design document.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import re
@@ -47,6 +46,7 @@ from telegram.ext import (
     filters,
 )
 from ..utils.message_utils import get_text
+from ..core.llm_services import LLMServices
 import httpx
 import logging
 from ..utils.database import DatabaseManager
@@ -231,11 +231,17 @@ def hash_claim(text: str, urls: List[str]) -> str:
 # ---------------------------------------------------------------------------
 
 class FactChecker:
-    """Tiny orchestrator coordinating fetchers and stance model."""
+    """Tiny orchestrator coordinating fact checks via an LLM."""
 
-    def __init__(self, fetcher: Fetcher, stance: StanceModel):
+    def __init__(
+        self,
+        fetcher: Optional[Fetcher] = None,
+        stance: Optional[StanceModel] = None,
+        llm_services: Optional[LLMServices] = None,
+    ):
         self.fetcher = fetcher
-        self.stance = stance
+        self.stance = stance or StanceModel()
+        self.llm_services = llm_services
 
     async def extract_claim(self, text: str) -> Optional[Claim]:
         if not text or len(text) < 10:
@@ -250,58 +256,51 @@ class FactChecker:
             hash=hash_claim(text_norm, urls),
         )
 
-    async def research(self, claim: Claim) -> Verdict:
-        tasks = [
-            asyncio.create_task(self.fetcher.fact_checker_search(claim)),
-            asyncio.create_task(self.fetcher.general_search(claim)),
-        ]
-        fc, web = await asyncio.gather(*tasks)
-        evidences = await self.stance.classify(claim, (fc or []) + (web or []))
-
-        score = 0.0
-        pos = neg = 0
-        for e in evidences:
-            if e.stance == "support":
-                pos += 1
-                score += e.score
-            elif e.stance == "refute":
-                neg += 1
-                score -= e.score
-        confidence = min(1.0, max(0.0, abs(score) / max(1, len(evidences))))
-        if pos >= 2 and neg == 0 and confidence >= 0.85:
-            label = "true"
-        elif pos >= 1 and neg == 0 and confidence >= 0.70:
-            label = "mostly_true"
-        elif neg >= 2 and confidence >= 0.80:
-            label = "false"
-        elif pos == 0 and neg == 0:
-            label = "unverified"
-        else:
-            label = "needs_context"
-
-        summary = self._make_summary(claim, label, evidences)
-        return Verdict(label=label, confidence=confidence, summary=summary, sources=evidences[:6])
-
-    def _make_summary(self, claim: Claim, label: str, evidences: List[Evidence]) -> str:
-        lead = {
-            "true": "Corroborated by multiple independent sources.",
-            "mostly_true": "Gist is correct; minor caveats apply.",
-            "false": "Contradicted by reliable sources.",
-            "needs_context": "Claim omits key context that changes interpretation.",
-            "unverified": "Insufficient credible coverage yet.",
-            "misleading_media": "Real media used out of context or edited.",
-            "opinion": "Value judgment; not checkable.",
-        }.get(label, "Assessment available.")
-
-        if label == "unverified":
-            total = len(evidences)
-            return (
-                f"{lead} "
-                "Fact-check and web searches yielded no reliable sources to verify or refute the claim. "
-                f"Checked {total} candidate source{'s' if total != 1 else ''}."
+    async def _llm_verdict(self, claim: Claim) -> Verdict:
+        """Use LLM to generate a verdict for the claim."""
+        if not self.llm_services:
+            return Verdict(
+                label="unverified",
+                confidence=0.0,
+                summary="LLM service unavailable.",
+                sources=[],
             )
 
-        return f"{lead}"
+        system_prompt = (
+            "You are a fact-checking assistant. Decide if the claim is true, false, "
+            "needs_context, or unverified. If unsure, respond with unverified. "
+            "Return a JSON object with keys 'label', 'confidence' (0-1), and 'summary'."
+        )
+        user_prompt = f"Claim: {claim.text_orig}"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        try:
+            completion = await self.llm_services.call_openai_llm(
+                messages, temperature=0.0, max_tokens=300
+            )
+        except Exception as e:
+            logger.error(f"LLM fact-check failed: {e}", exc_info=True)
+            completion = None
+
+        label = "unverified"
+        confidence = 0.0
+        summary = "No analysis available."
+        if completion:
+            try:
+                data = json.loads(completion)
+                label = data.get("label", label)
+                confidence = float(data.get("confidence", 0.0))
+                summary = data.get("summary", summary)
+            except Exception:
+                summary = completion.strip()
+
+        return Verdict(label=label, confidence=confidence, summary=summary, sources=[])
+
+    async def research(self, claim: Claim) -> Verdict:
+        return await self._llm_verdict(claim)
 
 
 # ---------------------------------------------------------------------------
