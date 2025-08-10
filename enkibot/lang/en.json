@@ -201,5 +201,20 @@
     "Friday": "Friday",
     "Saturday": "Saturday",
     "Sunday": "Sunday"
-  }
+  },
+  "factconfig_tab_preset": "Preset",
+  "factconfig_tab_policy": "Policy",
+  "factconfig_tab_limits": "Limits",
+  "factconfig_tab_auto": "Auto",
+  "factconfig_tab_danger": "Danger",
+  "factconfig_export_btn": "Export",
+  "factconfig_apply_btn": "Apply",
+  "factconfig_title": "Fact check config:",
+  "factconfig_update_ok": "Config updated.",
+  "factconfig_checking": "Checking…",
+  "factconfig_nothing_to_check": "Nothing to check.",
+  "factconfig_export_ok": "Configuration exported.",
+  "factconfig_export_fail": "Failed to export configuration.",
+  "factconfig_apply_ok": "Configuration applied.",
+  "factconfig_apply_fail": "Failed to apply configuration."
 }

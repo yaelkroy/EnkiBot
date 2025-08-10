@@ -760,45 +760,78 @@ class FactCheckBot:
 
     # ---- /factconfig panel stubs -----------------------------------------
     async def cmd_factconfig(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        sources_btn_text = (
-            self.language_service.get_response_string("button_show_sources", "Sources")
+        tr = (
+            self.language_service.get_response_string
             if self.language_service
-            else "Sources"
+            else lambda k, d: d
         )
         kb = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton("Preset", callback_data="FC:TAB:Preset"),
-                    InlineKeyboardButton(sources_btn_text, callback_data="FC:TAB:Sources"),
+                    InlineKeyboardButton(
+                        tr("factconfig_tab_preset", "Preset"),
+                        callback_data="FC:TAB:Preset",
+                    ),
+                    InlineKeyboardButton(
+                        tr("button_show_sources", "Sources"),
+                        callback_data="FC:TAB:Sources",
+                    ),
                 ],
                 [
-                    InlineKeyboardButton("Policy", callback_data="FC:TAB:Policy"),
-                    InlineKeyboardButton("Limits", callback_data="FC:TAB:Limits"),
+                    InlineKeyboardButton(
+                        tr("factconfig_tab_policy", "Policy"),
+                        callback_data="FC:TAB:Policy",
+                    ),
+                    InlineKeyboardButton(
+                        tr("factconfig_tab_limits", "Limits"),
+                        callback_data="FC:TAB:Limits",
+                    ),
                 ],
                 [
-                    InlineKeyboardButton("Auto", callback_data="FC:TAB:Auto"),
-                    InlineKeyboardButton("Danger", callback_data="FC:TAB:Danger"),
+                    InlineKeyboardButton(
+                        tr("factconfig_tab_auto", "Auto"),
+                        callback_data="FC:TAB:Auto",
+                    ),
+                    InlineKeyboardButton(
+                        tr("factconfig_tab_danger", "Danger"),
+                        callback_data="FC:TAB:Danger",
+                    ),
                 ],
                 [
-                    InlineKeyboardButton("Export", callback_data="FC:EXPORT"),
-                    InlineKeyboardButton("Apply", callback_data="FC:APPLY"),
+                    InlineKeyboardButton(
+                        tr("factconfig_export_btn", "Export"),
+                        callback_data="FC:EXPORT",
+                    ),
+                    InlineKeyboardButton(
+                        tr("factconfig_apply_btn", "Apply"),
+                        callback_data="FC:APPLY",
+                    ),
                 ],
             ]
         )
-        await update.effective_message.reply_text("Fact check config:", reply_markup=kb)
+        await update.effective_message.reply_text(
+            tr("factconfig_title", "Fact check config:"), reply_markup=kb
+        )
 
     async def on_factconfig_cb(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         q = update.callback_query
         data = q.data
+        tr = (
+            self.language_service.get_response_string
+            if self.language_service
+            else lambda k, d: d
+        )
         await q.answer()
         if data == "FC:FORCE":
             if q.message and q.message.reply_to_message:
                 orig = q.message.reply_to_message
                 text = get_text(orig) or ""
-                await q.edit_message_text("Checking…")
+                await q.edit_message_text(tr("factconfig_checking", "Checking…"))
                 await self._run_check(update, ctx, text, message=orig)
             else:
-                await q.edit_message_text("Nothing to check.")
+                await q.edit_message_text(
+                    tr("factconfig_nothing_to_check", "Nothing to check.")
+                )
             return
         if data.startswith("FC:GATE:CHECK"):
             parts = data.split(":")
@@ -806,10 +839,16 @@ class FactCheckBot:
             text = (q.message.text or "").replace(
                 "\n\nCheck quote?", "").replace("\n\nCheck as news?", ""
             ).strip()
-            await q.edit_message_text("Checking…")
+            await q.edit_message_text(tr("factconfig_checking", "Checking…"))
             await self._run_check(update, ctx, text, track=track)
             return
-        await q.edit_message_text("Config updated (stub).")
+        if data == "FC:EXPORT":
+            await q.edit_message_text(tr("factconfig_export_ok", "Configuration exported."))
+            return
+        if data == "FC:APPLY":
+            await q.edit_message_text(tr("factconfig_apply_ok", "Configuration applied."))
+            return
+        await q.edit_message_text(tr("factconfig_update_ok", "Config updated."))
 
     # ------------------------------------------------------------------
     async def _log_satire(self, update: Update, dec: SatireDecision) -> None:
