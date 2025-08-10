@@ -400,14 +400,15 @@ class FactCheckBot:
         if cfg.get("auto", {}).get("auto_check_news", True):
             p_news = await self.news_gate.predict(text)
             if p_news < 0.55:
-                await update.effective_message.reply_text("Not news — no check.")
                 return
             if p_news < 0.70:
                 kb = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Fact check anyway", callback_data="FC:FORCE")]]
+                    [[InlineKeyboardButton("Check as news?", callback_data="FC:GATE:CHECK")]]
                 )
-                await update.effective_message.reply_text(
-                    "Unclear if this is news.", reply_markup=kb
+                await ctx.bot.send_message(
+                    update.effective_user.id,
+                    f"{text}\n\nCheck as news?",
+                    reply_markup=kb,
                 )
                 return
             await self._run_check(update, ctx, text)
@@ -518,6 +519,11 @@ class FactCheckBot:
                 await self._run_check(update, ctx, text, message=orig)
             else:
                 await q.edit_message_text("Nothing to check.")
+            return
+        if data == "FC:GATE:CHECK":
+            text = (q.message.text or "").replace("\n\nCheck as news?", "").strip()
+            await q.edit_message_text("Checking…")
+            await self._run_check(update, ctx, text)
             return
         await q.edit_message_text("Config updated (stub).")
 

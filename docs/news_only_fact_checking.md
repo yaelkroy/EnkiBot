@@ -34,14 +34,23 @@ This document defines a **best‑of‑the‑best** mechanism for fact‑checking
 
 ## 2) Newsness Gate (only news proceeds)
 
-A fast binary classifier that passes only *likely news reports*.
+A two‑stage gate: cheap heuristics first, then a lightweight classifier. High recall; multilingual.
 
-* **Signals**: source/domain tier, presence of headline+lede structure, named entities, time phrases ("today", dates), verbs like *announced/said/reported*, URL patterns, channel/bio category, and a **Satire/Jokes detector**.
-* **Policy**: `P_news ≥ 0.70` → proceed; `0.55–0.70` → light check and ask; `<0.55` → label *Not news — no check*.
+* **Heuristic pass** (accept if any matches): source signals, headline+lede pattern, event time/place, quotative verbs, crisis lexicon, or article screenshot cues.
+* **Classifier pass**: tiny multilingual model trained on news vs. commentary/opinion/jokes.
+* **Policy**: `P_news ≥ 0.70` → proceed; `0.55–0.70` → *hold* (silent) and show the author a private **“Check as news?”** button; `<0.55` → *reject* silently.
 
 ---
 
-## 3) Claim Extraction & Normalization
+## 3) Silent UX Policy
+
+* **Non‑news**: the bot posts nothing. Optional admin digests only.
+* **Ambiguous**: only the author receives a hint with **“Check as news?”**. Group stays quiet.
+* **News**: after research, a normal verdict card appears.
+
+---
+
+## 4) Claim Extraction & Normalization
 
 1. Canonicalize text; collect URLs; language‑detect; translate for research; keep original.
 2. For images/videos: **GPT‑4o** extracts on‑screen text, captions, speaker quotes, and watermarks; grab keyframes.
@@ -49,7 +58,7 @@ A fast binary classifier that passes only *likely news reports*.
 
 ---
 
-## 4) Evidence Oracles (Deep Search)
+## 5) Evidence Oracles (Deep Search)
 
 **Providers (examples; pluggable):**
 
@@ -77,7 +86,7 @@ A fast binary classifier that passes only *likely news reports*.
 
 ---
 
-## 5) Model Orchestration (Responses API)
+## 6) Model Orchestration (Responses API)
 
 **Why use the model?** To plan, call tools, cluster duplicates, align provider labels, and write a careful, neutral summary. **Not** to invent truth.
 
@@ -103,7 +112,7 @@ archive.snapshot: {"url":"string"}
 
 ---
 
-## 6) Consensus & Disagreement
+## 7) Consensus & Disagreement
 
 * **Consensus**: ≥2 independent providers report the same stance → show *Confirmed* or *Contradicted* with provider list; confidence = **max provider confidence** (never invented).
 * **Split**: providers disagree → show counts (e.g., `2 support / 1 refute`) and a neutral summary. Offer **“More sources”**.
@@ -111,7 +120,7 @@ archive.snapshot: {"url":"string"}
 
 ---
 
-## 7) Verdict Card (Telegram UI)
+## 8) Verdict Card (Telegram UI)
 
 * Header: label + emoji (✅/❌/🟨/🕒/⚠️/💬)
 * One‑line neutral reason (e.g., “Reuters & AP say the claim is incorrect; see sources”).
@@ -121,7 +130,7 @@ archive.snapshot: {"url":"string"}
 
 ---
 
-## 8) Embeddings & Speed‑ups
+## 9) Embeddings & Speed‑ups
 
 * Build an **embeddings** index of article titles/snippets and past claims (e.g., `text-embedding-3-large`).
 * Use it to: (1) rank URLs for opening, (2) detect duplicates, (3) pre‑seed `factcheck.lookup` queries.
@@ -129,7 +138,7 @@ archive.snapshot: {"url":"string"}
 
 ---
 
-## 9) News‑Only Flow (end‑to‑end)
+## 10) News‑Only Flow (end‑to‑end)
 
 1. **Forward arrives** → Satire/Jokes filter → **Newsness Gate**.
 2. If news: extract claims; compute `claim_hash`; lookup cache.
@@ -140,7 +149,7 @@ archive.snapshot: {"url":"string"}
 
 ---
 
-## 10) Admin Controls (`/factconfig` excerpts)
+## 11) Admin Controls (`/factconfig` excerpts)
 
 * **Auto‑trigger**: `forwards_only | forwards_high_risk | off`
 * **Min provider tier**: 1/2
@@ -150,7 +159,7 @@ archive.snapshot: {"url":"string"}
 
 ---
 
-## 11) Storage (SQL quick sketch)
+## 12) Storage (SQL quick sketch)
 
 * `fact_oracle_runs(claim_id, oracle_id, verdict, confidence, queried_at, raw_json)`
 * `fact_oracle_evidence(run_id, url, domain, title, stance, published_at, snapshot_url, score)`
@@ -158,7 +167,7 @@ archive.snapshot: {"url":"string"}
 
 ---
 
-## 12) Safety & Compliance
+## 13) Safety & Compliance
 
 * Never assert truth beyond providers; attribute clearly.
 * Defamation guard: stricter policy for allegations about private individuals.
@@ -166,7 +175,7 @@ archive.snapshot: {"url":"string"}
 
 ---
 
-## 13) Quality & Monitoring
+## 14) Quality & Monitoring
 
 * **Coverage**: share of news forwards that pass the Gate and receive provider data.
 * **Disagreement rate** and time to consensus.
@@ -175,11 +184,12 @@ archive.snapshot: {"url":"string"}
 
 ---
 
-## 14) Minimal Orchestrator Pseudocode
+## 15) Minimal Orchestrator Pseudocode
 
 ```python
 async def handle_forward(msg):
-    if not news_gate(msg): return label("Not news")
+    if not news_gate(msg):
+        return  # silent for non-news
     claim = extract_claim(msg)
     if cache.has(claim.hash): return render(cache.get(claim.hash))
     route = choose_route(msg)   # o3 | o4-mini (+ 4o if images)
