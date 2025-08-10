@@ -266,7 +266,7 @@ class FactCheckBot:
     def register(self) -> None:
         self.app.add_handler(CommandHandler("factcheck", self.cmd_factcheck))
         self.app.add_handler(
-            MessageHandler(filters.Forwarded() & (filters.TEXT | filters.CAPTION), self.on_forward)
+            MessageHandler(filters.FORWARDED & (filters.TEXT | filters.CAPTION), self.on_forward)
         )
         self.app.add_handler(CallbackQueryHandler(self.on_factconfig_cb, pattern=r"^FC:"))
         self.app.add_handler(CommandHandler("factconfig", self.cmd_factconfig))
