@@ -120,6 +120,8 @@ class TelegramHandlerService:
         self.features_db: Dict[int, Dict[str, bool]] = {}
         # Manual language overrides per chat
         self.chat_languages: Dict[int, str] = {}
+        # Registry of default commands for help text and Telegram registration
+        self.default_commands: Dict[str, Dict[str, str]] = {}
 
         # Instantiate specialized handlers
         self.weather_handler = WeatherIntentHandler(
@@ -747,7 +749,11 @@ class TelegramHandlerService:
         if chat_id is None:
             return
         self.language_service._set_current_language_internals(bot_config.DEFAULT_LANGUAGE)
-        text = self.language_service.get_response_string("help")
+        intro = self.language_service.get_response_string("help")
+        commands_text = "\n".join(
+            f"/{name} - {info['long']}" for name, info in self.default_commands.items()
+        )
+        text = f"{intro}\n\n**Commands:**\n{commands_text}"
         if update.message:
             await update.message.reply_text(text)
         else:
@@ -1231,13 +1237,7 @@ class TelegramHandlerService:
     async def push_default_commands(self) -> None:
         """Registers global default slash commands."""
         commands = [
-            BotCommand("start", "Start the bot"),
-            BotCommand("help", "How to use the bot"),
-            BotCommand("stat", "Chat statistics"),
-            BotCommand("mystat", "Your statistics"),
-            BotCommand("report", "Report a message"),
-            BotCommand("spam", "Vote to ban a spammer"),
-            BotCommand("karma", "Show karma leaderboard"),
+            BotCommand(name, info["short"]) for name, info in self.default_commands.items()
         ]
         await self.application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
 
@@ -1301,20 +1301,27 @@ class TelegramHandlerService:
             del self.pending_action_data[chat_id]
         if context.user_data and 'conversation_state' in context.user_data:
             context.user_data.pop('conversation_state')
-            
+
         logger.info(f"User {update.effective_user.id if update.effective_user else ''} cancelled conversation.")
-        if update.message: 
+        if update.message:
             await update.message.reply_text(
-                self.language_service.get_response_string("conversation_cancelled", "Okay, current operation cancelled."), 
-                reply_markup=ReplyKeyboardRemove() 
+                self.language_service.get_response_string("conversation_cancelled", "Okay, current operation cancelled."),
+                reply_markup=ReplyKeyboardRemove()
             )
         return ConversationHandler.END
 
+    def _register_command(self, names, handler, short_desc: str, long_desc: str) -> None:
+        """Register command handler and store its descriptions."""
+        primary = names[0] if isinstance(names, (list, tuple, set)) else names
+        if handler is not None:
+            self.application.add_handler(CommandHandler(names, handler))
+        self.default_commands[primary] = {"short": short_desc, "long": long_desc}
+
     def register_all_handlers(self):
-        self.application.add_handler(CommandHandler("start", self.start_command))
-        self.application.add_handler(CommandHandler("help", self.help_command))
-        self.application.add_handler(CommandHandler("report", self.report_command))
-        self.application.add_handler(CommandHandler(["spam", "voteban"], self.spam_vote_command))
+        self._register_command("start", self.start_command, "Start the bot", "Start interaction")
+        self._register_command("help", self.help_command, "How to use the bot", "This help message")
+        self._register_command("report", self.report_command, "Report a message", "Report a message")
+        self._register_command(["spam", "voteban"], self.spam_vote_command, "Vote to ban a spammer", "Vote to ban a spammer")
         self.application.add_handler(CommandHandler("ban", self.ban_command))
         self.application.add_handler(CommandHandler("qban", self.qban_command))
         self.application.add_handler(CommandHandler(["unban", "pardon"], self.unban_command))
@@ -1323,10 +1330,10 @@ class TelegramHandlerService:
         self.application.add_handler(CommandHandler("mute", self.mute_command))
         self.application.add_handler(CommandHandler("unmute", self.unmute_command))
         self.application.add_handler(CommandHandler("muteinfo", self.muteinfo_command))
-        self.application.add_handler(CommandHandler(["stat", "stats"], self.chat_stats_command))
-        self.application.add_handler(CommandHandler("mystat", self.my_stats_command))
+        self._register_command(["stat", "stats"], self.chat_stats_command, "Chat statistics", "Show chat statistics")
+        self._register_command("mystat", self.my_stats_command, "Your statistics", "Show your statistics")
         self.application.add_handler(CommandHandler("userstats", self.user_stats_command))
-        self.application.add_handler(CommandHandler("karma", self.karma_command))
+        self._register_command("karma", self.karma_command, "Show karma leaderboard", "Show karma leaderboard")
         self.application.add_handler(CommandHandler("language", self.language_command))
         self.application.add_handler(CommandHandler("reload", self.reload_command))
         self.application.add_handler(CommandHandler("warn", self.warn_command))
@@ -1353,6 +1360,11 @@ class TelegramHandlerService:
             allow_reentry=True 
         )
         self.application.add_handler(conv_handler)
+        # Register news command metadata for help and command list
+        self.default_commands["news"] = {
+            "short": "Get the latest news",
+            "long": "Get the latest news",
+        }
 
         # Add the standalone handlers for voice and video note messages
         self.application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, self.handle_photo_message))
