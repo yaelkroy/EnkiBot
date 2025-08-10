@@ -127,7 +127,10 @@
     "video_message_received": "Получил ваше видео сообщение. Обрабатываю...",
     "video_transcription_failed": "Извините, я не смог разобрать аудио в этом видео.",
     "video_transcription_header": "Транскрипция видео:",
-    "video_translation_header": "Перевод видео (на русский):"
+    "video_translation_header": "Перевод видео (на русский):",
+    "hint_check_quote": "Проверить цитату?",
+    "hint_check_news": "Проверить как новость?",
+    "button_show_sources": "Показать источники"
   },
   "weather_conditions_map": {
     "clear_sky": "Ясно",

@@ -562,6 +562,7 @@ class FactCheckBot:
         quote_gate: Optional[QuoteGate] = None,
         cfg_reader: Callable[[int], Dict[str, object]] | None = None,
         db_manager: Optional[DatabaseManager] = None,
+        language_service=None,
     ) -> None:
         self.app = app
         self.fc = fc
@@ -570,6 +571,7 @@ class FactCheckBot:
         self.quote_gate = quote_gate or QuoteGate()
         self.cfg_reader = cfg_reader or (lambda _chat_id: {})
         self.db_manager = db_manager
+        self.language_service = language_service
 
     # Public API -------------------------------------------------------------
     def register(self) -> None:
@@ -636,10 +638,20 @@ class FactCheckBot:
                 await self._run_check(update, ctx, text, track="news")
                 return
             if p_book >= 0.55:
-                await self._show_author_only_hint(update, ctx, "Check quote?", "book")
+                hint = (
+                    self.language_service.get_response_string("hint_check_quote", "Check quote?")
+                    if self.language_service
+                    else "Check quote?"
+                )
+                await self._show_author_only_hint(update, ctx, hint, "book")
                 return
             if p_news >= 0.55:
-                await self._show_author_only_hint(update, ctx, "Check as news?", "news")
+                hint = (
+                    self.language_service.get_response_string("hint_check_news", "Check as news?")
+                    if self.language_service
+                    else "Check as news?"
+                )
+                await self._show_author_only_hint(update, ctx, hint, "news")
                 return
 
     async def cmd_factcheck(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -744,11 +756,16 @@ class FactCheckBot:
 
     # ---- /factconfig panel stubs -----------------------------------------
     async def cmd_factconfig(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        sources_btn_text = (
+            self.language_service.get_response_string("button_show_sources", "Sources")
+            if self.language_service
+            else "Sources"
+        )
         kb = InlineKeyboardMarkup(
             [
                 [
                     InlineKeyboardButton("Preset", callback_data="FC:TAB:Preset"),
-                    InlineKeyboardButton("Sources", callback_data="FC:TAB:Sources"),
+                    InlineKeyboardButton(sources_btn_text, callback_data="FC:TAB:Sources"),
                 ],
                 [
                     InlineKeyboardButton("Policy", callback_data="FC:TAB:Policy"),
