@@ -140,6 +140,11 @@ OPENROUTER_ENDPOINT_URL = "https://openrouter.ai/api/v1/chat/completions"
 GOOGLE_AI_API_KEY = os.getenv('ENKI_BOT_GOOGLE_AI_API_KEY')
 GOOGLE_AI_MODEL_ID = os.getenv('ENKI_BOT_GOOGLE_AI_MODEL_ID', 'gemini-1.5-flash-latest')
 
+# Estimated cost per 1K tokens for tracking purposes (USD)
+OPENAI_COST_PER_1K_TOKENS = float(os.getenv('ENKI_BOT_OPENAI_COST_PER_1K_TOKENS', '0'))
+GROQ_COST_PER_1K_TOKENS = float(os.getenv('ENKI_BOT_GROQ_COST_PER_1K_TOKENS', '0'))
+OPENROUTER_COST_PER_1K_TOKENS = float(os.getenv('ENKI_BOT_OPENROUTER_COST_PER_1K_TOKENS', '0'))
+
 # --- External Service API Keys ---
 NEWS_API_KEY = os.getenv('ENKI_BOT_NEWS_API_KEY')
 WEATHER_API_KEY = os.getenv('ENKI_BOT_WEATHER_API_KEY')
