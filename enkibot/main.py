@@ -23,7 +23,6 @@
 # -------------------------------------------------------------------------------
 import os
 import logging
-import asyncio
 from typing import Optional 
 from telegram import Update
 from telegram.ext import Application
@@ -71,16 +70,22 @@ def main() -> None:
         # --- MODIFIED BOT INSTANTIATION ---
         enkibot_app_instance = EnkiBotApplication(ptb_app)
         enkibot_app_instance.register_handlers() # Call the method to register handlers
-        # Publish default slash commands so clients show helpful suggestions
-        asyncio.run(enkibot_app_instance.handler_service.push_default_commands())
+        # Register a post-init callback so slash commands are published
+        # once the application's event loop is running. This avoids using
+        # ``asyncio.run`` before polling, which previously closed the default
+        # event loop and caused ``RuntimeError: There is no current event loop``.
+        async def post_init(application: Application) -> None:
+            await enkibot_app_instance.handler_service.push_default_commands()
+
+        ptb_app.post_init(post_init)
         # --- END MODIFICATION ---
 
         logger.info("Starting EnkiBot polling...")
         # The run method is now part of EnkiBotApplication, or keep polling here
         # For simplicity, keeping polling here:
-        ptb_app.run_polling(allowed_updates=Update.ALL_TYPES) 
+        ptb_app.run_polling(allowed_updates=Update.ALL_TYPES)
         # Alternatively, if you add a run() method to EnkiBotApplication:
-        # enkibot_app_instance.run() 
+        # enkibot_app_instance.run()
         
         logger.info("EnkiBot has stopped.")
     except Exception as e:
