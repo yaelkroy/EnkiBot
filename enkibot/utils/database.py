@@ -511,6 +511,114 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
         "VerifiedUsers": "CREATE TABLE VerifiedUsers (UserID BIGINT PRIMARY KEY, VerifiedAt DATETIME2 DEFAULT GETDATE());",
         "ModerationLog": "CREATE TABLE ModerationLog (LogID INT IDENTITY(1,1) PRIMARY KEY, ChatID BIGINT NOT NULL, UserID BIGINT NULL, MessageID BIGINT NOT NULL, Categories NVARCHAR(255) NULL, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "IX_ModerationLog_ChatID_Timestamp": "CREATE INDEX IX_ModerationLog_ChatID_Timestamp ON ModerationLog (ChatID, Timestamp DESC);",
+        # ------------------------------------------------------------------
+        # Advanced karma system tables
+        # ------------------------------------------------------------------
+        "karma_events": (
+            "CREATE TABLE karma_events ("
+            "event_id BIGINT IDENTITY(1,1) PRIMARY KEY,"
+            "chat_id BIGINT NOT NULL,"
+            "msg_id BIGINT NULL,"
+            "target_user_id BIGINT NOT NULL,"
+            "rater_user_id BIGINT NOT NULL,"
+            "emoji NVARCHAR(16) NULL,"
+            "base FLOAT NOT NULL,"
+            "rater_trust FLOAT NOT NULL,"
+            "diversity FLOAT NOT NULL,"
+            "anti_collusion FLOAT NOT NULL,"
+            "novelty FLOAT NOT NULL,"
+            "content_factor FLOAT NOT NULL,"
+            "weight FLOAT NOT NULL,"
+            "ts DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME()"
+            ");"
+        ),
+        "IX_events_chat_msg": "CREATE INDEX IX_events_chat_msg ON karma_events(chat_id, msg_id) INCLUDE (ts, weight);",
+        "message_scores": (
+            "CREATE TABLE message_scores ("
+            "chat_id BIGINT NOT NULL,"
+            "msg_id BIGINT NOT NULL,"
+            "author_id BIGINT NOT NULL,"
+            "score_current FLOAT NOT NULL DEFAULT 0,"
+            "pos INT NOT NULL DEFAULT 0,"
+            "neg INT NOT NULL DEFAULT 0,"
+            "last_update DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME(),"
+            "CONSTRAINT PK_message_scores PRIMARY KEY (chat_id, msg_id)"
+            ");"
+        ),
+        "IX_msg_author": "CREATE INDEX IX_msg_author ON message_scores(author_id, last_update DESC);",
+        "user_rep_rollup": (
+            "CREATE TABLE user_rep_rollup ("
+            "chat_id BIGINT NOT NULL,"
+            "user_id BIGINT NOT NULL,"
+            "day DATE NOT NULL,"
+            "delta_score FLOAT NOT NULL,"
+            "pos INT NOT NULL,"
+            "neg INT NOT NULL,"
+            "skills_json NVARCHAR(MAX) NULL,"
+            "CONSTRAINT PK_user_rep_rollup PRIMARY KEY (chat_id, user_id, day)"
+            ");"
+        ),
+        "IX_user_rep_rollup_day": "CREATE INDEX IX_user_rep_rollup_day ON user_rep_rollup(day);",
+        "user_rep_current": (
+            "CREATE TABLE user_rep_current ("
+            "chat_id BIGINT NOT NULL,"
+            "user_id BIGINT NOT NULL,"
+            "rep FLOAT NOT NULL DEFAULT 0,"
+            "rep_global FLOAT NOT NULL DEFAULT 0,"
+            "streak_days INT NOT NULL DEFAULT 0,"
+            "last_seen DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME(),"
+            "badges_json NVARCHAR(MAX) NULL,"
+            "CONSTRAINT PK_user_rep_current PRIMARY KEY (chat_id, user_id)"
+            ");"
+        ),
+        "IX_user_rep_rank": "CREATE INDEX IX_user_rep_rank ON user_rep_current(chat_id, rep DESC);",
+        "skill_rep_current": (
+            "CREATE TABLE skill_rep_current ("
+            "chat_id BIGINT NOT NULL,"
+            "user_id BIGINT NOT NULL,"
+            "tag NVARCHAR(64) NOT NULL,"
+            "rep FLOAT NOT NULL,"
+            "CONSTRAINT PK_skill_rep_current PRIMARY KEY (chat_id, user_id, tag)"
+            ");"
+        ),
+        "IX_skill_tag": "CREATE INDEX IX_skill_tag ON skill_rep_current(tag, rep DESC);",
+        "karmaconfig": (
+            "CREATE TABLE karmaconfig ("
+            "chat_id BIGINT PRIMARY KEY,"
+            "emoji_map_json NVARCHAR(MAX) NULL,"
+            "decay_msg_days INT NOT NULL DEFAULT 7,"
+            "decay_user_days INT NOT NULL DEFAULT 45,"
+            "allow_downvotes BIT NOT NULL DEFAULT 1,"
+            "daily_budget INT NOT NULL DEFAULT 18,"
+            "downvote_quorum INT NOT NULL DEFAULT 4,"
+            "diversity_window_hours INT NOT NULL DEFAULT 12,"
+            "reciprocity_threshold FLOAT NOT NULL DEFAULT 0.30,"
+            "preset NVARCHAR(32) NULL,"
+            "auto_tune BIT NOT NULL DEFAULT 1"
+            ");"
+        ),
+        "trust_table": (
+            "CREATE TABLE trust_table ("
+            "chat_id BIGINT NOT NULL,"
+            "user_id BIGINT NOT NULL,"
+            "trust FLOAT NOT NULL,"
+            "upheld INT NOT NULL DEFAULT 0,"
+            "overturned INT NOT NULL DEFAULT 0,"
+            "tenure_days INT NOT NULL DEFAULT 0,"
+            "phone_verified BIT NOT NULL DEFAULT 0,"
+            "last_update DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME(),"
+            "CONSTRAINT PK_trust_table PRIMARY KEY (chat_id, user_id)"
+            ");"
+        ),
+        "karmabans": (
+            "CREATE TABLE karmabans ("
+            "chat_id BIGINT NOT NULL,"
+            "user_id BIGINT NOT NULL,"
+            "reason NVARCHAR(256) NULL,"
+            "until_ts DATETIME2 NULL,"
+            "CONSTRAINT PK_karmabans PRIMARY KEY (chat_id, user_id)"
+            ");"
+        ),
     }
     try:
         with conn.cursor() as cursor:
