@@ -701,7 +701,12 @@ class TelegramHandlerService:
             question_for_analysis = self.language_service.get_response_string("replied_message_default_question")
         
         is_forwarded = bool(
-            original_msg.forward_from or original_msg.forward_from_chat or original_msg.forward_sender_name
+            original_msg.forward_from
+            or original_msg.forward_from_chat
+            or original_msg.forward_sender_name
+            or getattr(original_msg, "forward_date", None)
+            or getattr(original_msg, "forward_origin", None)
+            or getattr(original_msg, "is_automatic_forward", False)
         )
         if is_forwarded:
             analyzer_prompts = self.language_service.get_llm_prompt_set("forwarded_news_fact_checker")
