@@ -28,13 +28,22 @@ import os
 import re
 from typing import Dict, Any, Optional, List
 
-from telegram import Update 
+try:
+    from telegram import Update
+except Exception:  # pragma: no cover - allows running tests without telegram
+    class Update:  # type: ignore
+        pass
 
 from enkibot import config 
 from enkibot.core.llm_services import LLMServices 
 from enkibot.utils.database import DatabaseManager 
 
 logger = logging.getLogger(__name__)
+
+# Common Latin transliterations of Russian words for heuristic detection
+TRANSLIT_RU_PATTERN = re.compile(
+    r"\b(?:privet|kak|dela|spasibo|poka)\b", re.IGNORECASE
+)
 
 class LanguageService:
     def __init__(self, 
@@ -312,6 +321,11 @@ class LanguageService:
             # like Russian are still recognised even when the LLM is
             # unavailable.
             if re.search(r"[\u0400-\u04FF]", aggregated_text_for_llm_prompt_check):
+                if re.search(r"[іїєґІЇЄҐ]", aggregated_text_for_llm_prompt_check):
+                    final_candidate_lang_code = "uk"
+                else:
+                    final_candidate_lang_code = "ru"
+            elif TRANSLIT_RU_PATTERN.search(aggregated_text_for_llm_prompt_check):
                 final_candidate_lang_code = "ru"
             elif re.search(r"[A-Za-z]", aggregated_text_for_llm_prompt_check):
                 final_candidate_lang_code = "en"

@@ -6,6 +6,9 @@ import asyncio
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 sys.modules.setdefault("pyodbc", types.SimpleNamespace(Connection=object))
+sys.modules.setdefault("telegram", types.SimpleNamespace(Update=object))
+sys.modules.setdefault("httpx", types.SimpleNamespace())
+sys.modules.setdefault("openai", types.SimpleNamespace())
 
 from enkibot.core.language_service import LanguageService
 
@@ -23,7 +26,20 @@ class DummyDB:
         return []
 
 
-def test_russian_heuristic_detection():
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("энки расскажи сказку", "ru"),
+        ("tell me a story", "en"),
+        ("енкі розкажи казку", "uk"),
+        ("privet, kak dela?", "ru"),
+        ("ok", "en"),
+        ("ок", "ru"),
+        ("да", "ru"),
+    ],
+)
+def test_language_detection_cases(text, expected):
     ls = LanguageService(DummyLLM(), DummyDB())
-    asyncio.run(ls.determine_language_context('энки расскажи сказку', chat_id=None))
-    assert ls.current_lang == 'ru'
+    asyncio.run(ls.determine_language_context(text, chat_id=None))
+    assert ls.current_lang == expected
