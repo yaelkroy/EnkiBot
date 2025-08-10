@@ -46,6 +46,9 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from ..utils.message_utils import get_text
+
+TEXT_OR_CAPTION = (filters.TEXT & ~filters.COMMAND) | filters.Caption(True)
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -266,14 +269,21 @@ class FactCheckBot:
     def register(self) -> None:
         self.app.add_handler(CommandHandler("factcheck", self.cmd_factcheck))
         self.app.add_handler(
-            MessageHandler(filters.FORWARDED & (filters.TEXT | filters.CAPTION), self.on_forward)
+            MessageHandler(filters.FORWARDED & TEXT_OR_CAPTION, self.on_forward)
+        )
+        # Safety net for older PTB versions where Caption filter may not fire
+        self.app.add_handler(
+            MessageHandler(
+                filters.FORWARDED & (filters.PHOTO | filters.VIDEO | filters.DOCUMENT),
+                self.on_forward,
+            )
         )
         self.app.add_handler(CallbackQueryHandler(self.on_factconfig_cb, pattern=r"^FC:"))
         self.app.add_handler(CommandHandler("factconfig", self.cmd_factconfig))
 
     # Handlers --------------------------------------------------------------
     async def on_forward(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        text = update.effective_message.text or update.effective_message.caption or ""
+        text = get_text(update.effective_message) or ""
         cfg = self.cfg_reader(update.effective_chat.id)
         if cfg.get("satire", {}).get("enabled", True):
             dec = await self.satire.predict(update, text)
@@ -291,11 +301,7 @@ class FactCheckBot:
 
     async def cmd_factcheck(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if update.effective_message.reply_to_message:
-            text = (
-                update.effective_message.reply_to_message.text
-                or update.effective_message.reply_to_message.caption
-                or ""
-            )
+            text = get_text(update.effective_message.reply_to_message) or ""
         else:
             text = " ".join(ctx.args)
         await self._run_check(update, ctx, text)

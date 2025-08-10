@@ -57,3 +57,20 @@ def is_forwarded_message(message: Any) -> bool:
         return bool(getattr(message, "is_automatic_forward"))
     except AttributeError:
         return False
+
+
+def get_text(message: Any) -> str | None:
+    """Return text or caption from a Telegram *message*.
+
+    Many messages such as photos or videos carry their textual content in the
+    ``caption`` field rather than ``text``.  This helper consolidates both
+    attributes so handlers can process any user supplied text without worrying
+    about the underlying message type.
+    """
+
+    if message is None:
+        return None
+
+    text = getattr(message, "text", None)
+    caption = getattr(message, "caption", None)
+    return text or caption
