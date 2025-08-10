@@ -41,7 +41,6 @@ from enkibot.modules.community_moderation import CommunityModerationService
 from enkibot.modules.fact_check import (
     FactChecker,
     FactCheckBot,
-    DuckDuckGoFetcher,
     SatireDetector,
     StanceModel,
 )
@@ -117,7 +116,7 @@ class EnkiBotApplication:
         # ------------------------------------------------------------------
         # Fact checking subsystem (skeleton implementation)
         # ------------------------------------------------------------------
-        self.fact_checker = FactChecker(fetcher=DuckDuckGoFetcher(), stance=StanceModel())
+        self.fact_checker = FactChecker(stance=StanceModel(), llm_services=self.llm_services)
 
         def _default_fact_cfg(_chat_id: int) -> dict:
             return {"satire": {"enabled": False}, "auto": {"auto_check_news": True}}
