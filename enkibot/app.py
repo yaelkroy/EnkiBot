@@ -87,7 +87,8 @@ class EnkiBotApplication:
         self.stats_manager = StatsManager(self.db_manager)
         self.karma_manager = KarmaManager(self.db_manager)
         self.community_moderation = CommunityModerationService(
-            admin_chat_id=config.REPORTS_CHANNEL_ID
+            self.language_service,
+            admin_chat_id=config.REPORTS_CHANNEL_ID,
         )
 
         # Initialize Telegram handlers, passing all necessary services

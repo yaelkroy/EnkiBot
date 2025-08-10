@@ -60,6 +60,8 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 
+from enkibot.core.language_service import LanguageService
+
 # ---------------------------------------------------------------------------
 # Database setup
 # ---------------------------------------------------------------------------
@@ -146,6 +148,7 @@ class AdminTools:
     """
 
     app: Application
+    language_service: LanguageService
     engine_url: str = "sqlite:///admin_tools.sqlite3"
 
     def __post_init__(self) -> None:
@@ -181,7 +184,9 @@ class AdminTools:
     async def _ensure_admin(self, update: Update) -> bool:
         if await self._is_admin(update):
             return True
-        await update.effective_message.reply_text("Admins only.")
+        await update.effective_message.reply_text(
+            self.language_service.get_response_string("admins_only")
+        )
         return False
 
     def _log_action(self, chat_id: int, target_id: int, action: str, reason: str | None = None, until: datetime | None = None) -> None:
