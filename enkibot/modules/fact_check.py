@@ -743,15 +743,51 @@ class FactCheckBot:
             "misleading_media": "\u26a0\ufe0f",
             "opinion": "\ud83d\udcac",
         }.get(v.label, "\u2139\ufe0f")
-        lines = [
-            f"{icon} Verdict: *{v.label.replace('_', ' ').title()}* ({v.confidence:.0%})",
-            v.summary,
-            "\nTop sources:",
-        ]
-        for e in v.sources:
-            lines.append(
-                f"\u2022 {e.domain} — {e.stance} {('('+e.published_at+')') if e.published_at else ''}"
+
+        lang = self.language_service
+        verdict_key_map = {
+            "true": "verdict_label_true",
+            "mostly_true": "verdict_label_mostly_true",
+            "needs_context": "verdict_label_needs_context",
+            "unverified": "verdict_label_unverified",
+            "false": "verdict_label_false",
+            "misleading_media": "verdict_label_misleading_media",
+            "opinion": "verdict_label_opinion",
+        }
+        stance_key_map = {
+            "support": "stance_support",
+            "refute": "stance_refute",
+            "mixed": "stance_mixed",
+            "na": "stance_na",
+        }
+
+        verdict_label = v.label.replace("_", " ").title()
+        verdict_heading = "Verdict"
+        top_sources_label = "Top sources"
+        if lang:
+            verdict_label = lang.get_response_string(
+                verdict_key_map.get(v.label, "verdict_label_unverified"), verdict_label
             )
+            verdict_heading = lang.get_response_string("fact_card_verdict", "Verdict")
+            top_sources_label = lang.get_response_string(
+                "fact_card_top_sources", "Top sources"
+            )
+
+        lines = [
+            f"{icon} {verdict_heading}: *{verdict_label}* ({v.confidence:.0%})",
+            v.summary,
+        ]
+        if v.sources:
+            lines.append(f"\n{top_sources_label}:")
+            for e in v.sources:
+                stance = e.stance
+                if lang:
+                    stance = lang.get_response_string(
+                        stance_key_map.get(e.stance, "stance_na"), e.stance
+                    )
+                lines.append(
+                    f"\u2022 {e.domain} — {stance} {('('+e.published_at+')') if e.published_at else ''}"
+                )
         return "\n".join(lines)
 
     # ---- /factconfig panel stubs -----------------------------------------
