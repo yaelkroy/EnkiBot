@@ -20,15 +20,20 @@
 # - Enhance error handling and logging for better maintenance.
 # - Expand unit tests to cover more edge cases.
 # -------------------------------------------------------------------------------
+"""Advanced spam detection with a Zero-Trust approach."""
 
-"""Spam detection module using OpenAI's moderation API."""
+from __future__ import annotations
 
 import logging
-from typing import Optional
+import re
+from time import time
+from typing import Any, Callable, Dict, Optional
 
-from telegram import Update
+import tldextract
+from telegram import ChatPermissions, Update
 from telegram.ext import ContextTypes
 
+from enkibot import config as bot_config
 from enkibot.modules.base_module import BaseModule
 from enkibot.core.llm_services import LLMServices
 from enkibot.utils.database import DatabaseManager
@@ -44,182 +49,188 @@ class SpamDetector(BaseModule):
         llm_services: LLMServices,
         db_manager: Optional[DatabaseManager] = None,
         enabled: bool = True,
-    ):
+    ) -> None:
         super().__init__("SpamDetector")
         self.llm_services = llm_services
         self.db_manager = db_manager
         self.enabled = enabled
+        self.captcha_callback: Optional[Callable[[Any, int, ContextTypes.DEFAULT_TYPE], Any]] = None
+        # Track per-user state across chats: joined timestamp, verification and clean message count
+        self.user_states: Dict[tuple[int, int], Dict[str, Any]] = {}
         logger.info("SpamDetector initialized. Enabled=%s", self.enabled)
 
+    # ------------------------------------------------------------------
+    # Configuration helpers
+    def set_captcha_callback(self, callback: Callable[[Any, int, ContextTypes.DEFAULT_TYPE], Any]) -> None:
+        """Allows external components to provide a captcha starter."""
+        self.captcha_callback = callback
+
+    def _is_new_or_unverified(self, state: Dict[str, Any]) -> bool:
+        cfg = bot_config.ZERO_TRUST_SETTINGS
+        if not state:
+            return True
+        if state.get("verified"):
+            return False
+        if time() - state.get("joined_ts", 0) <= cfg["watch_new_user_window_sec"]:
+            return True
+        return state.get("clean_msgs", 0) < cfg["watch_first_messages"]
+
+    def _apply_heuristics(self, text: str) -> float:
+        cfg = bot_config.ZERO_TRUST_SETTINGS
+        heur = cfg["heuristics"]
+        lists = cfg["lists"]
+        risk = 0.0
+        t = text or ""
+        urls = re.findall(r"https?://\S+|t\.me/\S+|\S+\.\S+", t, flags=re.I)
+        if urls:
+            risk += heur["url_in_first_msg"]
+            for u in urls:
+                dom = tldextract.extract(u)
+                fqdn = ".".join(part for part in [dom.subdomain, dom.domain, dom.suffix] if part)
+                if fqdn in lists["domain_blocklist"]:
+                    risk += 0.10
+        if len(re.findall(r"@\w{3,}", t)) >= 3:
+            risk += heur["many_mentions"]
+        letters = re.findall(r"[A-Za-z]", t)
+        if len(t) > 40 and letters:
+            caps_ratio = sum(1 for c in letters if c.isupper()) / len(letters)
+            if caps_ratio >= 0.8:
+                risk += heur["all_caps_long"]
+        if re.search(r"(.)\1{3,}", t) or re.search(r"([!?$€£¥]){4,}", t):
+            risk += heur["repeated_chars"]
+        low = t.lower()
+        if any(k in low for k in lists["keyword_blocklist"]):
+            risk += heur["keyword_hits"]
+        return min(risk, 1.0)
+
+    def _combined_risk(self, spamish: float, heur_score: float, state: Dict[str, Any]) -> float:
+        base = max(spamish, heur_score)
+        if self._is_new_or_unverified(state):
+            base = min(base + 0.10, 1.0)
+        return base
+
+    async def _log_action(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        user,
+        text: str,
+        risk: float,
+        scores: Dict[str, float],
+        action: str,
+    ) -> None:
+        cfg = bot_config.ZERO_TRUST_SETTINGS
+        admin_chat_id = cfg["logging"].get("admin_chat_id")
+        if not admin_chat_id:
+            return
+        short = (text[:200] + "…") if text and len(text) > 200 else (text or "")
+        try:
+            await context.bot.send_message(
+                admin_chat_id,
+                (
+                    f"🚫 Zero-Trust {action}\n"
+                    f"• Chat: {chat_id}\n"
+                    f"• User: @{getattr(user, 'username', user.id)}\n"
+                    f"• Risk: {risk:.2f}\n"
+                    f"• Scores: {scores}\n"
+                    f"• Excerpt: {short}"
+                ),
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     async def inspect_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> bool:
-        """Checks a message and removes it if flagged.
+        """Checks a message and removes it if deemed risky.
 
-        Returns ``True`` if a message was flagged and handled (deleted/banned).
-        """
+        Returns ``True`` if a message was flagged and handled
+        (deleted/banned/muted)."""
         if not self.enabled:
             return False
         if not update.message or not update.message.text:
             return False
-
-        moderation_result = await self.llm_services.moderate_text_openai(
-            update.message.text
-        )
-        if not moderation_result or not moderation_result.get("flagged"):
+        user = update.effective_user
+        if not user or user.is_bot:
             return False
 
-        chat = update.effective_chat
-        chat_id = chat.id
-        chat_name = (
-            chat.title
-            or getattr(chat, "full_name", None)
-            or chat.username
-            or str(chat_id)
-        )
-        user = update.effective_user
-        user_id = user.id if user else None
-        user_name = (user.full_name if user else None) or getattr(
-            user, "username", "Unknown"
-        )
-        message_id = update.message.message_id
-        bot_name = context.bot.username or str(context.bot.id)
+        chat_id = update.effective_chat.id
+        text = update.message.text
+        key = (chat_id, user.id)
+        state = self.user_states.get(key)
+        if state is None:
+            state = {"joined_ts": time(), "verified": False, "clean_msgs": 0}
+            self.user_states[key] = state
 
-        # Log moderation action to database if configured
-        if self.db_manager and self.db_manager.connection_string:
+        heur_score = self._apply_heuristics(text)
+        moderation_result = await self.llm_services.moderate_text_openai(text)
+        scores = moderation_result.get("category_scores", {}) if moderation_result else {}
+        spamish = max(scores.values()) if scores else 0.0
+        risk = self._combined_risk(spamish, heur_score, state)
+        if moderation_result and moderation_result.get("flagged"):
+            risk = max(risk, bot_config.ZERO_TRUST_SETTINGS["global_thresholds"]["delete"])
+
+        thresholds = bot_config.ZERO_TRUST_SETTINGS["global_thresholds"]
+        action: Optional[str] = None
+        if risk >= thresholds["ban"]:
+            action = "banned"
+        elif risk >= thresholds["mute_then_captcha"]:
+            action = "muted_captcha"
+        elif risk >= thresholds["delete"]:
+            action = "deleted"
+
+        if action:
+            message_id = update.message.message_id
             try:
-                categories_obj = moderation_result.get("categories", {})
-                if hasattr(categories_obj, "model_dump"):
-                    categories = categories_obj.model_dump()
-                elif hasattr(categories_obj, "dict"):
-                    categories = categories_obj.dict()
-                elif isinstance(categories_obj, dict):
-                    categories = categories_obj
-                else:
-                    categories = {}
-                flagged = ", ".join([k for k, v in categories.items() if v])
-                await self.db_manager.log_moderation_action(
-                    chat_id=chat_id,
-                    user_id=user_id,
-                    message_id=message_id,
-                    categories=flagged or None,
-                )
-            except Exception as e:  # pragma: no cover - logging shouldn't raise
-                logger.error("Failed to log moderation action: %s", e, exc_info=True)
-
-        # Delete offending message
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-            logger.info(
-                "Bot %s deleted flagged message %s from %s (%s) in chat %s (%s)",
-                bot_name,
-                message_id,
-                user_name,
-                user_id,
-                chat_name,
-                chat_id,
-            )
-        except Exception as e:
-            logger.error(
-                "Bot %s failed to delete flagged message %s from %s (%s) in chat %s (%s): %s",
-                bot_name,
-                message_id,
-                user_name,
-                user_id,
-                chat_name,
-                chat_id,
-                e,
-            )
-
-        # Ban user responsible for the message
-        if user_id is not None:
-            try:
-                member = await context.bot.get_chat_member(
-                    chat_id=chat_id, user_id=user_id
-                )
+                await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
             except Exception as e:
-                logger.error(
-                    "Bot %s failed to fetch member info for user %s (%s) in chat %s (%s): %s",
-                    bot_name,
-                    user_name,
-                    user_id,
-                    chat_name,
-                    chat_id,
-                    e,
-                )
-            else:
-                user_name = (
-                    member.user.full_name
-                    or getattr(member.user, "username", None)
-                    or str(user_id)
-                )
-                if member.status == "creator":
-                    logger.warning(
-                        "Bot %s cannot ban chat owner %s (%s) in chat %s (%s)",
-                        bot_name,
-                        user_name,
-                        user_id,
-                        chat_name,
-                        chat_id,
-                    )
-                elif member.status == "administrator":
-                    try:
-                        bot_member = await context.bot.get_chat_member(
-                            chat_id=chat_id, user_id=context.bot.id
-                        )
-                        if bot_member.status == "creator":
-                            await context.bot.ban_chat_member(
-                                chat_id=chat_id, user_id=user_id
-                            )
-                            logger.info(
-                                "Bot %s banned admin %s (%s) for spam in chat %s (%s)",
-                                bot_name,
-                                user_name,
-                                user_id,
-                                chat_name,
-                                chat_id,
-                            )
-                        else:
-                            logger.warning(
-                                "Bot %s lacks rights to ban admin %s (%s) in chat %s (%s)",
-                                bot_name,
-                                user_name,
-                                user_id,
-                                chat_name,
-                                chat_id,
-                            )
-                    except Exception as e:
-                        logger.error(
-                            "Bot %s failed to ban admin %s (%s) in chat %s (%s): %s",
-                            bot_name,
-                            user_name,
-                            user_id,
-                            chat_name,
-                            chat_id,
-                            e,
-                        )
-                else:
-                    try:
-                        await context.bot.ban_chat_member(
-                            chat_id=chat_id, user_id=user_id
-                        )
-                        logger.info(
-                            "Bot %s banned user %s (%s) for spam in chat %s (%s)",
-                            bot_name,
-                            user_name,
-                            user_id,
-                            chat_name,
-                            chat_id,
-                        )
-                    except Exception as e:
-                        logger.error(
-                            "Bot %s failed to ban user %s (%s) in chat %s (%s): %s",
-                            bot_name,
-                            user_name,
-                            user_id,
-                            chat_name,
-                            chat_id,
-                            e,
-                        )
+                logger.error("Failed to delete message %s in chat %s: %s", message_id, chat_id, e)
 
-        return True
+            if self.db_manager and self.db_manager.connection_string and moderation_result:
+                try:
+                    categories_obj = moderation_result.get("categories", {})
+                    if hasattr(categories_obj, "model_dump"):
+                        categories = categories_obj.model_dump()
+                    elif hasattr(categories_obj, "dict"):
+                        categories = categories_obj.dict()
+                    elif isinstance(categories_obj, dict):
+                        categories = categories_obj
+                    else:
+                        categories = {}
+                    flagged = ", ".join([k for k, v in categories.items() if v])
+                    await self.db_manager.log_moderation_action(
+                        chat_id=chat_id,
+                        user_id=user.id,
+                        message_id=message_id,
+                        categories=flagged or None,
+                    )
+                except Exception as e:  # pragma: no cover
+                    logger.error("Failed to log moderation action: %s", e, exc_info=True)
+
+            if action == "banned":
+                try:
+                    await context.bot.ban_chat_member(chat_id=chat_id, user_id=user.id)
+                except Exception as e:
+                    logger.error("Failed to ban user %s in chat %s: %s", user.id, chat_id, e)
+            elif action == "muted_captcha":
+                try:
+                    perms = ChatPermissions(can_send_messages=False)
+                    await context.bot.restrict_chat_member(chat_id, user.id, permissions=perms)
+                except Exception as e:
+                    logger.error("Failed to restrict user %s in chat %s: %s", user.id, chat_id, e)
+                if self.captcha_callback:
+                    try:
+                        await self.captcha_callback(user, chat_id, context)
+                    except Exception as e:
+                        logger.error("Failed to start captcha for %s: %s", user.id, e)
+
+            await self._log_action(context, chat_id, user, text, risk, scores, action)
+            return True
+
+        # Message deemed clean -> update state
+        state["clean_msgs"] = state.get("clean_msgs", 0) + 1
+        if state["clean_msgs"] >= bot_config.ZERO_TRUST_SETTINGS["watch_first_messages"]:
+            state["verified"] = True
+        return False

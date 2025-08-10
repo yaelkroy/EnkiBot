@@ -262,6 +262,15 @@ class TelegramHandlerService:
         task = asyncio.create_task(self._captcha_timeout(user.id))
         self.pending_captchas[user.id]["task"] = task
 
+    async def start_captcha(self, user, chat_id: int, context: ContextTypes.DEFAULT_TYPE):
+        """Public wrapper to initiate captcha verification for a user.
+
+        This exposes the existing captcha mechanism to other modules
+        (e.g., the spam detector) without requiring them to know about the
+        private ``_start_captcha`` implementation details.
+        """
+        await self._start_captcha(user, chat_id, context)
+
     async def _captcha_timeout(self, user_id: int):
         await asyncio.sleep(bot_config.CAPTCHA_TIMEOUT_SECONDS)
         info = self.pending_captchas.get(user_id)

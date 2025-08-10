@@ -95,7 +95,13 @@ class EnkiBotApplication:
             allowed_group_ids=config.ALLOWED_GROUP_IDS, # Pass as set
             bot_nicknames=config.BOT_NICKNAMES_TO_CHECK # Pass as list
         )
-        
+
+        # Allow the spam detector to trigger captcha challenges via the
+        # Telegram handler service.
+        self.spam_detector.set_captcha_callback(
+            self.handler_service.start_captcha
+        )
+
         logger.info("EnkiBotApplication initialized all services.")
 
     def register_handlers(self):

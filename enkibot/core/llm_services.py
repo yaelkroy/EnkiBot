@@ -275,10 +275,12 @@ class LLMServices:
                 result = response.results[0]
                 # Extract minimal useful information. ``result`` is an
                 # OpenAI object; convert to a standard dict for downstream
-                # processing.
+                # processing. Include ``category_scores`` so callers can
+                # compute risk levels without re-parsing the OpenAI object.
                 return {
                     "flagged": bool(getattr(result, "flagged", False)),
                     "categories": getattr(result, "categories", {}),
+                    "category_scores": getattr(result, "category_scores", {}),
                 }
         except openai.APIError as e:
             logger.error(f"OpenAI Moderation API Error: {e.message}")

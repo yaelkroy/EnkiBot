@@ -40,6 +40,40 @@ ENABLE_SPAM_DETECTION = os.getenv('ENKI_BOT_ENABLE_SPAM_DETECTION', 'true').lowe
 CAPTCHA_TIMEOUT_SECONDS = int(os.getenv('ENKI_BOT_CAPTCHA_TIMEOUT_SECONDS', '60'))
 CAPTCHA_MAX_ATTEMPTS = int(os.getenv('ENKI_BOT_CAPTCHA_MAX_ATTEMPTS', '3'))
 
+# Zero-Trust moderation configuration. These values control how the spam
+# detector treats new or unverified users and how it scores their first
+# messages. All values can be overridden with environment variables.
+ZERO_TRUST_SETTINGS = {
+    "watch_new_user_window_sec": int(os.getenv('ENKI_BOT_ZT_NEW_USER_WINDOW', '3600')),
+    "watch_first_messages": int(os.getenv('ENKI_BOT_ZT_FIRST_MESSAGES', '5')),
+    "global_thresholds": {
+        "delete": float(os.getenv('ENKI_BOT_ZT_DELETE_THRESHOLD', '0.75')),
+        "ban": float(os.getenv('ENKI_BOT_ZT_BAN_THRESHOLD', '0.95')),
+        "mute_then_captcha": float(os.getenv('ENKI_BOT_ZT_MUTE_THRESHOLD', '0.80')),
+    },
+    "heuristics": {
+        "url_in_first_msg": float(os.getenv('ENKI_BOT_ZT_URL_RISK', '0.10')),
+        "many_mentions": float(os.getenv('ENKI_BOT_ZT_MANY_MENTIONS_RISK', '0.10')),
+        "all_caps_long": float(os.getenv('ENKI_BOT_ZT_ALL_CAPS_RISK', '0.10')),
+        "repeated_chars": float(os.getenv('ENKI_BOT_ZT_REPEAT_RISK', '0.05')),
+        "keyword_hits": float(os.getenv('ENKI_BOT_ZT_KEYWORD_RISK', '0.15')),
+    },
+    "lists": {
+        "domain_blocklist": set(filter(None, os.getenv(
+            'ENKI_BOT_ZT_DOMAIN_BLOCKLIST', 't.me/joinchat,bit.ly,cutt.ly'
+        ).split(','))),
+        "keyword_blocklist": set(filter(None, os.getenv(
+            'ENKI_BOT_ZT_KEYWORD_BLOCKLIST',
+            'free crypto,giveaway,xxx,adult cam,telegram view,loan approval,work from home $,forex vip'
+        ).split(','))),
+    },
+    "logging": {
+        "admin_chat_id": int(os.getenv('ENKI_BOT_ZT_ADMIN_CHAT_ID'))
+        if os.getenv('ENKI_BOT_ZT_ADMIN_CHAT_ID')
+        else None,
+    },
+}
+
 # Community moderation settings
 DEFAULT_SPAM_VOTE_THRESHOLD = int(os.getenv('ENKI_BOT_SPAM_VOTE_THRESHOLD', '3'))
 SPAM_VOTE_TIME_WINDOW_MINUTES = int(os.getenv('ENKI_BOT_SPAM_VOTE_WINDOW_MINUTES', '60'))
