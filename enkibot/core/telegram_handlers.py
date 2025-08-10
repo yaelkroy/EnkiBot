@@ -29,7 +29,17 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from types import SimpleNamespace
 
-from telegram import Update, ReplyKeyboardRemove, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    ReplyKeyboardRemove,
+    ChatPermissions,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    BotCommand,
+    BotCommandScopeDefault,
+    BotCommandScopeChat,
+    BotCommandScopeChatAdministrators,
+)
 from telegram.ext import Application, ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram.constants import ChatAction
 from telegram.helpers import mention_html
@@ -102,6 +112,8 @@ class TelegramHandlerService:
         self.pending_action_data: Dict[int, Dict[str, Any]] = {}
         self.pending_captchas: Dict[int, Dict[str, Any]] = {}
         self.nsfw_classifier: Optional['NudeClassifier'] = None
+        # Feature flags per chat for dynamic command hints
+        self.features_db: Dict[int, Dict[str, bool]] = {}
 
         # Instantiate specialized handlers
         self.weather_handler = WeatherIntentHandler(
@@ -1051,6 +1063,52 @@ class TelegramHandlerService:
         await self.db_manager.set_spam_vote_threshold(chat_id, threshold)
         await update.message.reply_text(f"Spam vote threshold set to {threshold}.")
 
+    async def push_default_commands(self) -> None:
+        """Registers global default slash commands."""
+        commands = [
+            BotCommand("start", "Start the bot"),
+            BotCommand("help", "How to use the bot"),
+            BotCommand("stat", "Chat statistics"),
+            BotCommand("mystat", "Your statistics"),
+            BotCommand("report", "Report a message"),
+            BotCommand("spam", "Vote to ban a spammer"),
+        ]
+        await self.application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+
+    async def refresh_chat_commands(self, chat_id: int) -> None:
+        """Refreshes command list for a specific chat based on feature flags."""
+        cfg = self.features_db.get(chat_id, {})
+        cmds = [
+            BotCommand("stat", "Show chat statistics"),
+            BotCommand("report", "Report a message"),
+        ]
+        if cfg.get("ai"):
+            cmds.append(BotCommand("ask", "Ask AI a question"))
+            cmds.append(BotCommand("draw", "Generate an image with AI"))
+        if cfg.get("captcha"):
+            cmds.append(BotCommand("captcha", "Show captcha settings"))
+        await self.application.bot.set_my_commands(cmds, scope=BotCommandScopeChat(chat_id))
+        admin_cmds = [
+            BotCommand("ban", "Ban the replied user"),
+            BotCommand("mute", "Mute the replied user"),
+            BotCommand("warn", "Warn the replied user"),
+        ]
+        await self.application.bot.set_my_commands(admin_cmds, scope=BotCommandScopeChatAdministrators(chat_id))
+
+    async def toggle_ai_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Admin command to toggle AI features and refresh commands."""
+        if not update.message or not update.effective_user:
+            return
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        if not await self._is_user_admin(chat_id, user_id, context):
+            return
+        self.features_db.setdefault(chat_id, {})
+        self.features_db[chat_id]["ai"] = not self.features_db[chat_id].get("ai", False)
+        await self.refresh_chat_commands(chat_id)
+        status = "ON" if self.features_db[chat_id]["ai"] else "OFF"
+        await update.message.reply_text(f"AI feature is now {status}.")
+
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f'Update "{update}" caused error "{context.error}"', exc_info=True)
         if isinstance(update, Update) and update.effective_chat:
@@ -1093,6 +1151,7 @@ class TelegramHandlerService:
         self.application.add_handler(CommandHandler(["rm_warn", "clear_warn"], self.remove_warn_command))
         self.application.add_handler(CommandHandler("toggle_nsfw", self.toggle_nsfw_filter_command))
         self.application.add_handler(CommandHandler("setspamthreshold", self.set_spam_threshold_command))
+        self.application.add_handler(CommandHandler("toggle_ai", self.toggle_ai_command))
         self.application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.handle_new_chat_members))
         self.application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, self.handle_left_chat_member))
         self.application.add_handler(CallbackQueryHandler(self.captcha_button_callback, pattern=r"^captcha_button:"))
