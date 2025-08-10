@@ -64,20 +64,28 @@ def main() -> None:
             write_timeout=config.TELEGRAM_WRITE_TIMEOUT,
             pool_timeout=config.TELEGRAM_POOL_TIMEOUT,
         )
-        ptb_app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).request(request).build()
-        
+
+        # Placeholder for the bot application instance so it can be referenced
+        # inside the post-init callback.
+        enkibot_app_instance: EnkiBotApplication | None = None
+
+        async def post_init(application: Application) -> None:
+            """Publish default commands once the application is running."""
+            if enkibot_app_instance:
+                await enkibot_app_instance.handler_service.push_default_commands()
+
+        ptb_app = (
+            Application.builder()
+            .token(config.TELEGRAM_BOT_TOKEN)
+            .request(request)
+            .post_init(post_init)
+            .build()
+        )
+
         logger.info("Initializing EnkiBotApplication...")
         # --- MODIFIED BOT INSTANTIATION ---
         enkibot_app_instance = EnkiBotApplication(ptb_app)
-        enkibot_app_instance.register_handlers() # Call the method to register handlers
-        # Register a post-init callback so slash commands are published
-        # once the application's event loop is running. This avoids using
-        # ``asyncio.run`` before polling, which previously closed the default
-        # event loop and caused ``RuntimeError: There is no current event loop``.
-        async def post_init(application: Application) -> None:
-            await enkibot_app_instance.handler_service.push_default_commands()
-
-        ptb_app.post_init = post_init
+        enkibot_app_instance.register_handlers()  # Call the method to register handlers
         # --- END MODIFICATION ---
 
         logger.info("Starting EnkiBot polling...")
