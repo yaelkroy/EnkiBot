@@ -219,14 +219,41 @@ class OpenAIWebFetcher(Fetcher):
                 tools=[{"type": "web_search_preview"}],
                 tool_choice={"type": "web_search_preview"},
                 reasoning={"effort": "medium"},
-                instructions=(
-                    "Return 3-6 sources as a JSON array with 'url' and 'title'.",
-                ),
+                instructions="Return 3-6 sources as a JSON array with 'url' and 'title'.",
                 input=claim.text_norm,
                 **kwargs,
             )
             items = json.loads(resp.output_text)
             logger.debug("Web fetcher: received %d search items", len(items))
+        except openai.OpenAIError as e:
+            # If the configured deep-research model is unavailable (e.g. 403
+            # model_not_found), try falling back to the general OpenAI model so
+            # web search still works in a limited fashion.
+            logger.warning(
+                "Web fetcher: deep research model '%s' unavailable: %s",
+                config.OPENAI_DEEP_RESEARCH_MODEL_ID,
+                e,
+            )
+            try:
+                resp = await client.responses.create(
+                    model=config.OPENAI_MODEL_ID,
+                    tools=[{"type": "web_search_preview"}],
+                    tool_choice={"type": "web_search_preview"},
+                    reasoning={"effort": "medium"},
+                    instructions="Return 3-6 sources as a JSON array with 'url' and 'title'.",
+                    input=claim.text_norm,
+                    **kwargs,
+                )
+                items = json.loads(resp.output_text)
+                logger.debug(
+                    "Web fetcher: received %d search items using fallback model",
+                    len(items),
+                )
+            except Exception as inner_e:
+                logger.error(
+                    "Web fetcher: search failed after fallback: %s", inner_e, exc_info=True
+                )
+                return []
         except Exception as e:
             logger.error("Web fetcher: search failed: %s", e, exc_info=True)
             return []
