@@ -201,12 +201,18 @@ class OpenAIWebFetcher(Fetcher):
             return []
         client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY)
         try:
-            extra: Dict[str, object] = {"search_context_size": config.OPENAI_SEARCH_CONTEXT_SIZE}
+            extra_body: Dict[str, object] = {
+                "search_context_size": config.OPENAI_SEARCH_CONTEXT_SIZE
+            }
             if config.OPENAI_SEARCH_USER_LOCATION:
                 try:
-                    extra["user_location"] = json.loads(config.OPENAI_SEARCH_USER_LOCATION)
+                    extra_body["user_location"] = json.loads(
+                        config.OPENAI_SEARCH_USER_LOCATION
+                    )
                 except Exception:
-                    extra["user_location"] = {"country": config.OPENAI_SEARCH_USER_LOCATION}
+                    extra_body["user_location"] = {
+                        "country": config.OPENAI_SEARCH_USER_LOCATION
+                    }
             resp = await client.responses.create(
                 model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
                 tools=[{"type": "web_search_preview"}],
@@ -216,7 +222,7 @@ class OpenAIWebFetcher(Fetcher):
                     "Return 3-6 sources as a JSON array with 'url' and 'title'.",
                 ),
                 input=claim.text_norm,
-                **extra,
+                extra_body=extra_body,
             )
             items = json.loads(resp.output_text)
             logger.debug("Web fetcher: received %d search items", len(items))
