@@ -118,21 +118,11 @@ The project is organized into logical modules:
     ```
 
 3.  **Install dependencies:**
-    Create a `requirements.txt` file in the project root:
-    ```txt
-    python-telegram-bot>=20.0
-    openai>=1.0
-    pyodbc
-    httpx>=0.20
-    langdetect
-    pymorphy3
-    transliterate
-    python-dotenv
-    ```
-    Then install:
+    The project now includes a `requirements.txt` file with the necessary packages. Install them with:
     ```bash
     pip install -r requirements.txt
     ```
+    **Note:** The correct Telegram library is `python-telegram-bot`. If you previously installed the similarly named `telegram` package, uninstall it first to avoid import errors.
 
     If you plan to run the local two-tier models you also need:
     ```txt

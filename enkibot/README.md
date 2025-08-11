@@ -96,21 +96,11 @@ The project is organized into logical modules:
     ```
 
 3.  **Install dependencies:**
-    Create a `requirements.txt` file in the project root:
-    ```txt
-    python-telegram-bot>=20.0
-    openai>=1.0
-    pyodbc
-    httpx>=0.20
-    langdetect
-    pymorphy3
-    transliterate
-    python-dotenv
-    ```
-    Then install:
+    The repository ships with a ready-made `requirements.txt`. Install dependencies with:
     ```bash
     pip install -r requirements.txt
     ```
+    **Note:** Ensure you install `python-telegram-bot` and not the unrelated `telegram` package to prevent import issues.
 
 4.  **Database Setup:**
     * Ensure your MS SQL Server is running and accessible.
