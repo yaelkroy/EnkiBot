@@ -153,9 +153,9 @@ class LLMServices:
                                         max_output_tokens: int = 1000) -> Optional[str]:
         """Call OpenAI's deep research model with web search enabled.
 
-        This uses the Responses API so the model can issue `web_search_preview`
-        tool calls when checking claims. It returns the aggregated text response
-        or ``None`` if the call fails.
+        This uses the Responses API so the model can issue `web_search` tool
+        calls when checking claims. It returns the aggregated text response or
+        ``None`` if the call fails.
         """
         if not self.is_provider_configured("openai"):
             logger.warning("OpenAI client not initialized or API key missing. Cannot make deep research call.")
@@ -165,9 +165,8 @@ class LLMServices:
             response = await self.openai_async_client.responses.create(
                 model=self.openai_deep_research_model_id,
                 input=messages,
-                tools=[{"type": "web_search_preview"}],
+                tools=[{"type": "web_search"}],
                 tool_choice="auto",
-                reasoning={"effort": "medium"},
                 max_output_tokens=max_output_tokens,
             )
             latency = time.perf_counter() - start
