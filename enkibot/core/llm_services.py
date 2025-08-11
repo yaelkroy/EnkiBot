@@ -140,8 +140,11 @@ class LLMServices:
                 return completion.choices[0].message.content.strip()
             logger.warning(f"OpenAI call to {actual_model_id} returned no content or unexpected structure.")
             return None
-        except openai.APIError as e:
-            logger.error(f"OpenAI API Error (model: {actual_model_id}): {e.message}", exc_info=False)
+        except openai.OpenAIError as e:
+            logger.error(
+                f"OpenAI API Error (model: {actual_model_id}): {e}",
+                exc_info=False,
+            )
         except Exception as e:
             logger.error(f"Unexpected error with OpenAI API (model: {actual_model_id}): {e}", exc_info=True)
         return None
@@ -172,8 +175,8 @@ class LLMServices:
             tokens = getattr(usage, "total_tokens", 0)
             self._record_metrics("OpenAI", latency, tokens)
             return getattr(response, "output_text", None)
-        except openai.APIError as e:
-            logger.error(f"OpenAI API Error (deep research): {e.message}", exc_info=False)
+        except openai.OpenAIError as e:
+            logger.error(f"OpenAI API Error (deep research): {e}", exc_info=False)
             # If the dedicated deep-research model is unavailable (e.g. 403
             # model_not_found), fall back to the standard chat completion
             # model so the bot still provides a best-effort answer.
@@ -213,8 +216,10 @@ class LLMServices:
             self._record_metrics("OpenAI", latency, tokens)
             if response.data:
                 return [item.embedding for item in response.data]
-        except openai.APIError as e:
-            logger.error(f"OpenAI Embedding API Error (model: {actual_model_id}): {e.message}")
+        except openai.OpenAIError as e:
+            logger.error(
+                f"OpenAI Embedding API Error (model: {actual_model_id}): {e}",
+            )
         except Exception as e:
             logger.error(f"Unexpected error during OpenAI embedding call (model: {actual_model_id}): {e}", exc_info=True)
         return None
