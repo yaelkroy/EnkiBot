@@ -127,7 +127,6 @@ class PrimarySourceHunter:
                     "You are a primary-source hunter. Always include 3-6 sources (at least 1 primary). "
                     "Return ONLY a JSON array named 'items' of objects {url, title}."
                 ),
-                response_format={"type": "json_object"},
                 input=query,
                 **extra,
             )

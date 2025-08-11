@@ -214,8 +214,8 @@ class OpenAIWebFetcher(Fetcher):
         try:
             resp = await client.responses.create(
                 model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
-                tools=[{"type": "web_search_preview"}],
-                tool_choice={"type": "web_search_preview"},
+                tools=[{"type": "web_search"}],
+                tool_choice="auto",
                 instructions="Return ONLY a JSON array named 'items' of objects {url, title}.",
                 input=claim.text_norm,
                 **extra,
@@ -236,8 +236,8 @@ class OpenAIWebFetcher(Fetcher):
             try:
                 resp = await client.responses.create(
                     model=config.OPENAI_MODEL_ID,
-                    tools=[{"type": "web_search_preview"}],
-                    tool_choice={"type": "web_search_preview"},
+                    tools=[{"type": "web_search"}],
+                    tool_choice="auto",
                     instructions="Return ONLY a JSON array named 'items' of objects {url, title}.",
                     input=claim.text_norm,
                     **extra,
@@ -693,6 +693,71 @@ class FactChecker:
                 except Exception as e:
                     logger.error("Research: primary source hunter error: %s", e, exc_info=True)
                     debug.append(f"primary source hunter error: {e}")
+
+            if (
+                not evidence
+                and claim.lang
+                and claim.lang != "en"
+                and self.llm_services
+            ):
+                try:
+                    messages = [
+                        {"role": "system", "content": "Translate the following text to English."},
+                        {"role": "user", "content": claim.text_norm},
+                    ]
+                    translated = await self.llm_services.call_openai_llm(
+                        messages,
+                        model_id=self.llm_services.openai_translation_model_id,
+                        temperature=0.0,
+                        max_tokens=1000,
+                    )
+                    if translated:
+                        t_claim = Claim(
+                            text_norm=normalize_text(translated),
+                            text_orig=claim.text_orig,
+                            lang="en",
+                            urls=claim.urls,
+                            hash=claim.hash,
+                        )
+                        if self.fetcher:
+                            try:
+                                web_hits = await self.fetcher.fact_checker_search(t_claim)
+                                evidence.extend(web_hits)
+                                debug.append(
+                                    f"web fetcher returned {len(web_hits)} items after translation"
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    "Research: web fetcher error after translation: %s", e, exc_info=True
+                                )
+                        if self.primary_hunter:
+                            try:
+                                hits = await self.primary_hunter.hunt(t_claim.text_norm, "en")
+                                for h in hits:
+                                    evidence.append(
+                                        Evidence(
+                                            url=h.url,
+                                            domain=h.domain,
+                                            stance="na",
+                                            note=h.title,
+                                            published_at=None,
+                                            snapshot_url=None,
+                                            tier=h.tier,
+                                            score=1.0,
+                                        )
+                                    )
+                                if hits:
+                                    debug.append(
+                                        f"primary source hunter returned {len(hits)} hits after translation"
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    "Research: primary source hunter error after translation: %s",
+                                    e,
+                                    exc_info=True,
+                                )
+                except Exception as e:
+                    logger.error("Research: translation step failed: %s", e, exc_info=True)
 
         verdict = await self._llm_verdict(claim, debug)  # type: ignore[arg-type]
         logger.debug(
