@@ -28,8 +28,11 @@ from dataclasses import dataclass
 from typing import Iterable, List, Dict
 
 import json
+import logging
 import openai
 from .. import config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -109,7 +112,6 @@ class PrimarySourceHunter:
                 model=self.model_id,
                 tools=[{"type": "web_search_preview"}],
                 tool_choice={"type": "web_search_preview"},
-                reasoning={"effort": "high"},
                 instructions=(
                     "You are a primary-source hunter. Always include 3-6 sources (at least 1 primary). "
                     "Return a JSON array of objects with 'url' and 'title'."
@@ -117,7 +119,8 @@ class PrimarySourceHunter:
                 input=query,
             )
             items = json.loads(resp.output_text)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Web search failed: %s", exc)
             return []
         hits: List[SourceHit] = []
         for item in items:

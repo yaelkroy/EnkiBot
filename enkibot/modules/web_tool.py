@@ -51,7 +51,6 @@ def web_research(query: str, k: int = 5) -> List[Dict[str, str]]:
             model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
             tools=[{"type": "web_search_preview"}],
             tool_choice={"type": "web_search_preview"},
-            reasoning={"effort": "medium"},
             instructions=(
                 f"Return up to {k} sources as a JSON array of objects with 'title' and 'url'."
             ),
