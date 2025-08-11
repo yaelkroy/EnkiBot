@@ -1159,6 +1159,31 @@ def initialize_database():  # This function defines and uses DatabaseManager loc
                     )
                     logger.info(f"Column '{col_name}' added to 'UserProfiles'.")
 
+            # Ensure fact-check log has optional columns
+            fc_columns = {
+                "Track": "NVARCHAR(8) NULL CHECK (Track IN ('news','book'))",
+                "Details": "NVARCHAR(MAX) NULL",
+            }
+            for col_name, definition in fc_columns.items():
+                cursor.execute(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'FactCheckLog' AND COLUMN_NAME = ?",
+                    (col_name,),
+                )
+                if cursor.fetchone():
+                    logger.info(
+                        f"Column '{col_name}' already exists in 'FactCheckLog'."
+                    )
+                else:
+                    logger.info(
+                        f"Column '{col_name}' missing in 'FactCheckLog'. Adding..."
+                    )
+                    cursor.execute(
+                        f"ALTER TABLE FactCheckLog ADD {col_name} {definition}"
+                    )
+                    logger.info(
+                        f"Column '{col_name}' added to 'FactCheckLog'."
+                    )
+
             logger.info("Database initialization check complete.")
     except Exception as e:
         logger.error(f"DB init error: {e}", exc_info=True)
