@@ -955,11 +955,18 @@ class TelegramHandlerService:
                 logger.error("Prompt set for forwarded news fact-check is missing or malformed.")
                 await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
                 return
+            # Detect language of the forwarded text so the deep research uses that language
+            await self.language_service.determine_language_context(
+                original_text, update.effective_chat.id
+            )
             analysis_result = await self.response_generator.fact_check_forwarded_message(
                 forwarded_text=original_text,
                 user_question=question_for_analysis,
                 system_prompt=analyzer_prompts["system"],
-                user_prompt_template=analyzer_prompts.get("user_template")
+                user_prompt_template=analyzer_prompts.get("user_template"),
+                fallback_text=self.language_service.get_response_string(
+                    "analysis_unavailable", "Analysis unavailable."
+                ),
             )
         else:
             analyzer_prompts = self.language_service.get_llm_prompt_set("replied_message_analyzer")

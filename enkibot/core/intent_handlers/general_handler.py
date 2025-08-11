@@ -76,14 +76,24 @@ class GeneralIntentHandler:
             analyzer_prompts = self.language_service.get_llm_prompt_set("forwarded_news_fact_checker")
             if analyzer_prompts and "system" in analyzer_prompts:
                 forwarded_text = update.message.text or update.message.caption or ""
+                # Detect the language of the forwarded text so the research happens in that language
+                await self.language_service.determine_language_context(
+                    forwarded_text, update.effective_chat.id
+                )
+
                 question = user_msg_txt
                 if question == forwarded_text or len(question.strip()) < 5:
-                    question = self.language_service.get_response_string("replied_message_default_question")
+                    question = self.language_service.get_response_string(
+                        "replied_message_default_question"
+                    )
                 fact_check_result = await self.response_generator.fact_check_forwarded_message(
                     forwarded_text=forwarded_text,
                     user_question=question,
                     system_prompt=analyzer_prompts["system"],
-                    user_prompt_template=analyzer_prompts.get("user_template")
+                    user_prompt_template=analyzer_prompts.get("user_template"),
+                    fallback_text=self.language_service.get_response_string(
+                        "analysis_unavailable", "Analysis unavailable."
+                    ),
                 )
                 for chunk in split_text_into_chunks(fact_check_result):
                     await update.message.reply_text(chunk)

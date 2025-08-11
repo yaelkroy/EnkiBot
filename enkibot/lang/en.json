@@ -111,6 +111,7 @@
     "llm_no_assistants": "Sorry, none of my AI assistants are available right now.",
     "analysis_error": "Sorry, an error occurred during the text analysis.",
     "analysis_client_not_configured": "The analysis function cannot be performed as the AI client is not configured.",
+    "analysis_unavailable": "Analysis unavailable.",
     "conversation_cancelled": "Okay, the current operation has been cancelled.",
     "llm_quota_exceeded": "You've reached your daily limit for AI responses. Please try again tomorrow.",
     "image_quota_exceeded": "You've reached your daily image generation limit. Please try again tomorrow.",
