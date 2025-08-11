@@ -49,7 +49,7 @@ def web_research(query: str, k: int = 5) -> List[Dict[str, str]]:
     try:
         resp = client.responses.create(
             model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
-            tools=[{"type": "web_search"}],
+            tools=[{"type": "web_search_preview"}],
             tool_choice="auto",
             reasoning={"effort": "medium"},
             instructions=(

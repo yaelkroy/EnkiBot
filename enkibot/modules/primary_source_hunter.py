@@ -107,7 +107,7 @@ class PrimarySourceHunter:
         try:
             resp = await self.client.responses.create(
                 model=self.model_id,
-                tools=[{"type": "web_search"}],
+                tools=[{"type": "web_search_preview"}],
                 tool_choice="auto",
                 reasoning={"effort": "high"},
                 instructions=(
