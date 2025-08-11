@@ -63,7 +63,6 @@ def web_research(query: str, k: int = 5) -> List[Dict[str, str]]:
             instructions=(
                 f"Return up to {k} sources as a JSON array named 'items' of objects with 'title' and 'url'."
             ),
-            response_format={"type": "json_object"},
             input=query,
             **extra,
         )
