@@ -23,10 +23,18 @@
 # -------------------------------------------------------------------------------
 import os
 import logging
-from typing import Optional 
-from telegram import Update
-from telegram.ext import Application
-from telegram.request import HTTPXRequest
+from typing import Optional
+
+try:
+    from telegram import Update
+    from telegram.ext import Application
+    from telegram.request import HTTPXRequest
+except ImportError as exc:
+    raise ImportError(
+        "EnkiBot requires the 'python-telegram-bot' package. Install it with "
+        "`pip install python-telegram-bot>=20.0` and make sure any conflicting "
+        "`telegram` package is uninstalled."
+    ) from exc
 
 from enkibot import config
 from enkibot.utils.logging_config import setup_logging
