@@ -107,6 +107,18 @@ class PrimarySourceHunter:
         """Use OpenAI's web search tool to find sources."""
         if not self.client:
             return []
+        extra: Dict[str, object] = {}
+        if config.OPENAI_SEARCH_CONTEXT_SIZE:
+            extra["search_context_size"] = config.OPENAI_SEARCH_CONTEXT_SIZE
+        if config.OPENAI_SEARCH_USER_LOCATION:
+            try:
+                extra["user_location"] = json.loads(
+                    config.OPENAI_SEARCH_USER_LOCATION
+                )
+            except Exception:
+                extra["user_location"] = {
+                    "country": config.OPENAI_SEARCH_USER_LOCATION
+                }
         try:
             resp = await self.client.responses.create(
                 model=self.model_id,
@@ -117,6 +129,7 @@ class PrimarySourceHunter:
                     "Return a JSON array of objects with 'url' and 'title'."
                 ),
                 input=query,
+                **extra,
             )
             items = json.loads(resp.output_text)
         except Exception as exc:

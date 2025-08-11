@@ -46,6 +46,16 @@ def web_research(query: str, k: int = 5) -> List[Dict[str, str]]:
     if not config.OPENAI_API_KEY:
         return []
     client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+    extra: Dict[str, object] = {}
+    if config.OPENAI_SEARCH_CONTEXT_SIZE:
+        extra["search_context_size"] = config.OPENAI_SEARCH_CONTEXT_SIZE
+    if config.OPENAI_SEARCH_USER_LOCATION:
+        try:
+            extra["user_location"] = json.loads(
+                config.OPENAI_SEARCH_USER_LOCATION
+            )
+        except Exception:
+            extra["user_location"] = {"country": config.OPENAI_SEARCH_USER_LOCATION}
     try:
         resp = client.responses.create(
             model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
@@ -55,6 +65,7 @@ def web_research(query: str, k: int = 5) -> List[Dict[str, str]]:
                 f"Return up to {k} sources as a JSON array of objects with 'title' and 'url'."
             ),
             input=query,
+            **extra,
         )
         hits = json.loads(resp.output_text)
     except Exception as exc:  # pragma: no cover
