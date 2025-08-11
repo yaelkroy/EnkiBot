@@ -115,7 +115,6 @@ def get_domain_reputation(domain: str) -> str:
 
 
 @dataclass
-@dataclass
 class Verdict:
     """Aggregated verdict for a claim."""
 
@@ -215,13 +214,15 @@ class OpenAIWebFetcher(Fetcher):
         try:
             resp = await client.responses.create(
                 model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
-                tools=[{"type": "web_search_preview"}],
-                tool_choice={"type": "web_search_preview"},
-                instructions="Return 3-6 sources as a JSON array with 'url' and 'title'.",
+                tools=[{"type": "web_search"}],
+                instructions="Return ONLY a JSON array named 'items' of objects {url, title}.",
+                response_format={"type": "json_object"},
                 input=claim.text_norm,
                 **extra,
             )
-            items = json.loads(resp.output_text)
+            text = (getattr(resp, "output_text", "") or "").strip()
+            data = json.loads(text) if text.startswith("{") else {"items": []}
+            items = data.get("items", [])
             logger.debug("Web fetcher: received %d search items", len(items))
         except openai.OpenAIError as e:
             # If the configured deep-research model is unavailable (e.g. 403
@@ -235,13 +236,15 @@ class OpenAIWebFetcher(Fetcher):
             try:
                 resp = await client.responses.create(
                     model=config.OPENAI_MODEL_ID,
-                    tools=[{"type": "web_search_preview"}],
-                    tool_choice={"type": "web_search_preview"},
-                    instructions="Return 3-6 sources as a JSON array with 'url' and 'title'.",
+                    tools=[{"type": "web_search"}],
+                    instructions="Return ONLY a JSON array named 'items' of objects {url, title}.",
+                    response_format={"type": "json_object"},
                     input=claim.text_norm,
                     **extra,
                 )
-                items = json.loads(resp.output_text)
+                text = (getattr(resp, "output_text", "") or "").strip()
+                data = json.loads(text) if text.startswith("{") else {"items": []}
+                items = data.get("items", [])
                 logger.debug(
                     "Web fetcher: received %d search items using fallback model",
                     len(items),

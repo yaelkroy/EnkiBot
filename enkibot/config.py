@@ -117,11 +117,11 @@ DB_CONNECTION_STRING = (
 # OpenAI
 OPENAI_API_KEY = os.getenv('ENKI_BOT_OPENAI_API_KEY')
 OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4.1-mini')                 # General orchestrator
-# Default deep-research model. `o3-deep-research` offers the best quality.
-# If you do not have access, override with `o4-mini` or another available model
-# via the environment variable.
+# Default deep‑research model. ``gpt-4o-mini`` works for most accounts with
+# built‑in web search. Override with ``o3-deep-research`` or another supported
+# model via the environment variable if you have access.
 OPENAI_DEEP_RESEARCH_MODEL_ID = os.getenv(
-    'ENKI_BOT_OPENAI_DEEP_RESEARCH_MODEL_ID', 'o3-deep-research'
+    'ENKI_BOT_OPENAI_DEEP_RESEARCH_MODEL_ID', 'gpt-4o-mini'
 )
 OPENAI_EMBEDDING_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_EMBEDDING_MODEL_ID', 'text-embedding-3-large')
 OPENAI_CLASSIFICATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_CLASSIFICATION_MODEL_ID', 'gpt-3.5-turbo') # For faster tasks like intent classification

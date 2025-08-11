@@ -122,16 +122,18 @@ class PrimarySourceHunter:
         try:
             resp = await self.client.responses.create(
                 model=self.model_id,
-                tools=[{"type": "web_search_preview"}],
-                tool_choice={"type": "web_search_preview"},
+                tools=[{"type": "web_search"}],
                 instructions=(
                     "You are a primary-source hunter. Always include 3-6 sources (at least 1 primary). "
-                    "Return a JSON array of objects with 'url' and 'title'."
+                    "Return ONLY a JSON array named 'items' of objects {url, title}."
                 ),
+                response_format={"type": "json_object"},
                 input=query,
                 **extra,
             )
-            items = json.loads(resp.output_text)
+            text = (getattr(resp, "output_text", "") or "").strip()
+            data = json.loads(text) if text.startswith("{") else {"items": []}
+            items = data.get("items", [])
         except Exception as exc:
             logger.warning("Web search failed: %s", exc)
             return []

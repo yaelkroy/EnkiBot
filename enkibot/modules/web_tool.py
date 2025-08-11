@@ -59,15 +59,17 @@ def web_research(query: str, k: int = 5) -> List[Dict[str, str]]:
     try:
         resp = client.responses.create(
             model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
-            tools=[{"type": "web_search_preview"}],
-            tool_choice={"type": "web_search_preview"},
+            tools=[{"type": "web_search"}],
             instructions=(
-                f"Return up to {k} sources as a JSON array of objects with 'title' and 'url'."
+                f"Return up to {k} sources as a JSON array named 'items' of objects with 'title' and 'url'."
             ),
+            response_format={"type": "json_object"},
             input=query,
             **extra,
         )
-        hits = json.loads(resp.output_text)
+        text = (getattr(resp, "output_text", "") or "").strip()
+        data = json.loads(text) if text.startswith("{") else {"items": []}
+        hits = data.get("items", [])
     except Exception as exc:  # pragma: no cover
         logger.warning("Web search failed: %s", exc)
         return []

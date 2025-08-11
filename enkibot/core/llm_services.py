@@ -165,8 +165,7 @@ class LLMServices:
             response = await self.openai_async_client.responses.create(
                 model=self.openai_deep_research_model_id,
                 input=messages,
-                tools=[{"type": "web_search_preview"}],
-                tool_choice={"type": "web_search_preview"},
+                tools=[{"type": "web_search"}],
                 max_output_tokens=max_output_tokens,
             )
             latency = time.perf_counter() - start
