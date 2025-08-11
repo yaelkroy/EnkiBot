@@ -1,3 +1,10 @@
+import os
+import sys
+import types
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+sys.modules.setdefault("pyodbc", types.SimpleNamespace(Connection=object))
+
 from enkibot.modules.fact_check import get_domain_reputation
 
 

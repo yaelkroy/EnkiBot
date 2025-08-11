@@ -31,7 +31,7 @@
 import logging
 import traceback
 import pyodbc
-import os # <--- IMPORT OS MODULE
+import os  # <--- IMPORT OS MODULE
 from enkibot import config
 
 def setup_logging():
@@ -119,7 +119,8 @@ def setup_logging():
             super().close()
 
     # --- Main Logging Configuration ---
-    log_level = logging.INFO
+    log_level_name = os.getenv("ENKI_LOG_LEVEL", "DEBUG").upper()
+    log_level = getattr(logging, log_level_name, logging.DEBUG)
     log_format = '%(asctime)s - %(name)s - %(levelname)s - %(module)s:%(lineno)d - %(message)s'
     
     # Configure root logger

@@ -67,6 +67,13 @@ TEXT_OR_CAPTION = (filters.TEXT & ~filters.COMMAND) | filters.CAPTION
 
 logger = logging.getLogger(__name__)
 
+try:  # pragma: no cover - optional dependency for language detection
+    from langdetect import detect, DetectorFactory, LangDetectException
+    DetectorFactory.seed = 0
+except Exception:  # pragma: no cover
+    detect = None  # type: ignore
+    LangDetectException = Exception  # type: ignore
+
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
@@ -430,14 +437,25 @@ class FactChecker:
             return None
         urls = URL_RE.findall(text)
         text_norm = normalize_text(text)
+        lang = None
+        if detect:
+            try:
+                lang = detect(text_norm)
+            except LangDetectException:
+                lang = None
         claim = Claim(
             text_norm=text_norm,
             text_orig=text,
-            lang=None,
+            lang=lang,
             urls=urls,
             hash=hash_claim(text_norm, urls),
         )
-        logger.debug("Claim extracted with hash %s and %d URLs", claim.hash, len(urls))
+        logger.debug(
+            "Claim extracted with hash %s, %d URLs, lang=%s",
+            claim.hash,
+            len(urls),
+            lang,
+        )
         return claim
 
     async def extract_quote(self, text: str) -> Optional[Quote]:
@@ -451,6 +469,12 @@ class FactChecker:
         # at least one space (i.e. two or more words).
         if " " not in quote:
             return None
+        lang = None
+        if detect:
+            try:
+                lang = detect(quote)
+            except LangDetectException:
+                lang = None
         author = title = None
         if m.group(2):
             parts = [p.strip() for p in re.split(r",|\u2014|-", m.group(2), maxsplit=1) if p.strip()]
@@ -459,7 +483,7 @@ class FactChecker:
                 if len(parts) > 1:
                     title = parts[1]
         h = hashlib.sha256(quote.lower().encode("utf-8")).hexdigest()
-        return Quote(quote=quote, author=author, title=title, lang=None, hash=h)
+        return Quote(quote=quote, author=author, title=title, lang=lang, hash=h)
 
     async def _llm_verdict(self, claim: Claim, debug: List[str]) -> Verdict:
         """Use LLM to generate a verdict for the claim."""
