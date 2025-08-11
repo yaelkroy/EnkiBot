@@ -66,10 +66,12 @@ def setup_logging():
             try:
                 # Use autocommit=True for logging to ensure errors are written immediately.
                 return pyodbc.connect(config.DB_CONNECTION_STRING, autocommit=True)
-            except pyodbc.Error:
-                # If the DB is down, we can't log to it. Silently fail for now.
-                # A print statement could be added here for immediate feedback if needed.
-                # print("WARNING: SQLDBLogHandler could not connect to the database for logging.")
+            except pyodbc.Error as e:
+                # If the DB is down, we can't log to it. Provide immediate console feedback.
+                print(
+                    "WARNING: SQLDBLogHandler could not connect to the database for logging:",
+                    e,
+                )
                 return None
 
         def emit(self, record: logging.LogRecord):
@@ -83,13 +85,29 @@ def setup_logging():
                 try:
                     msg = self.format(record)
                     exc_info_str = traceback.format_exc() if record.exc_info else None
-                    sql = "INSERT INTO ErrorLog (LogLevel, LoggerName, ModuleName, FunctionName, LineNumber, ErrorMessage, ExceptionInfo) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                    sql = (
+                        "INSERT INTO ErrorLog (LogLevel, LoggerName, ModuleName, FunctionName, "
+                        "LineNumber, ErrorMessage, ExceptionInfo) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                    )
                     with self.conn.cursor() as cursor:
-                        cursor.execute(sql, record.levelname, record.name, record.module, record.funcName, record.lineno, msg, exc_info_str)
-                except pyodbc.Error:
+                        cursor.execute(
+                            sql,
+                            record.levelname,
+                            record.name,
+                            record.module,
+                            record.funcName,
+                            record.lineno,
+                            msg,
+                            exc_info_str,
+                        )
+                except pyodbc.Error as e:
                     # If an error occurs during logging, handle it and sever the connection.
+                    print(
+                        "WARNING: SQLDBLogHandler failed to write log record to database:",
+                        e,
+                    )
                     self.handleError(record)
-                    self.conn = None # Reset connection to be re-established on next emit.
+                    self.conn = None  # Reset connection to be re-established on next emit.
         
         def close(self):
             """Closes the database connection if it's open."""
