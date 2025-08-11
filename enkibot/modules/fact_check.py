@@ -498,10 +498,17 @@ class FactChecker:
                 sources=[],
             )
 
+        lang_name = {
+            "ru": "Russian",
+            "uk": "Ukrainian",
+            "en": "English",
+        }.get(claim.lang or "", "the original language of the claim")
+
         system_prompt = (
             "You are a fact-checking assistant. Decide if the claim is true, false, "
             "needs_context, or unverified. If unsure, respond with unverified. "
-            "Return a JSON object with keys 'label', 'confidence' (0-1), and 'summary'."
+            "Return a JSON object with keys 'label', 'confidence' (0-1), and 'summary' in "
+            f"{lang_name}."
         )
         user_prompt = f"Claim: {claim.text_orig}"
         messages = [
@@ -509,13 +516,15 @@ class FactChecker:
             {"role": "user", "content": user_prompt},
         ]
 
-        debug.append(f"LLM model: {getattr(self.llm_services, 'openai_model_id', 'unknown')}")
+        debug.append(
+            f"LLM model: {getattr(self.llm_services, 'openai_deep_research_model_id', 'unknown')}"
+        )
         debug.append(f"System prompt: {system_prompt}")
         debug.append(f"User prompt: {user_prompt}")
 
         try:
-            completion = await self.llm_services.call_openai_llm(
-                messages, temperature=0.0, max_tokens=300
+            completion = await self.llm_services.call_openai_deep_research(
+                messages, max_output_tokens=300
             )
             logger.debug("LLM verdict: received completion %r", completion)
             debug.append(f"Raw response: {completion}")

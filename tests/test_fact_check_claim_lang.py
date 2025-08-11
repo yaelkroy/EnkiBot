@@ -5,6 +5,27 @@ import types
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 sys.modules.setdefault("pyodbc", types.SimpleNamespace(Connection=object))
+filters_stub = types.SimpleNamespace(TEXT=1, COMMAND=2, CAPTION=4)
+sys.modules.setdefault(
+    "telegram",
+    types.SimpleNamespace(
+        InlineKeyboardButton=object,
+        InlineKeyboardMarkup=object,
+        Update=object,
+        Message=object,
+    ),
+)
+sys.modules.setdefault(
+    "telegram.ext",
+    types.SimpleNamespace(
+        Application=object,
+        CallbackQueryHandler=object,
+        CommandHandler=object,
+        ContextTypes=object,
+        MessageHandler=object,
+        filters=filters_stub,
+    ),
+)
 
 from enkibot.modules.fact_check import FactChecker
 
