@@ -214,9 +214,9 @@ class OpenAIWebFetcher(Fetcher):
         try:
             resp = await client.responses.create(
                 model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
-                tools=[{"type": "web_search"}],
+                tools=[{"type": "web_search_preview"}],
+                tool_choice={"type": "web_search_preview"},
                 instructions="Return ONLY a JSON array named 'items' of objects {url, title}.",
-                response_format={"type": "json_object"},
                 input=claim.text_norm,
                 **extra,
             )
@@ -236,9 +236,9 @@ class OpenAIWebFetcher(Fetcher):
             try:
                 resp = await client.responses.create(
                     model=config.OPENAI_MODEL_ID,
-                    tools=[{"type": "web_search"}],
+                    tools=[{"type": "web_search_preview"}],
+                    tool_choice={"type": "web_search_preview"},
                     instructions="Return ONLY a JSON array named 'items' of objects {url, title}.",
-                    response_format={"type": "json_object"},
                     input=claim.text_norm,
                     **extra,
                 )
