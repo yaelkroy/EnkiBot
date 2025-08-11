@@ -162,7 +162,7 @@ The project is organized into logical modules:
     # LLM API Keys & Models (provide at least OpenAI or one other)
     ENKI_BOT_OPENAI_API_KEY="sk-YOUR_OPENAI_KEY"
     ENKI_BOT_OPENAI_MODEL_ID="gpt-4.1-mini"
-    ENKI_BOT_OPENAI_DEEP_RESEARCH_MODEL_ID="o3-deep-research"  # or o4-mini if you lack access
+    ENKI_BOT_OPENAI_DEEP_RESEARCH_MODEL_ID="gpt-4o-mini"  # or o3-deep-research if you have access
     ENKI_BOT_OPENAI_EMBEDDING_MODEL_ID="text-embedding-3-large"
     ENKI_BOT_OPENAI_MULTIMODAL_IMAGE_MODEL_ID="gpt-4o"
     ENKI_BOT_OPENAI_SEARCH_USER_LOCATION="{\"country\":\"US\"}"
