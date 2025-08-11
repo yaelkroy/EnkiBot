@@ -43,32 +43,64 @@ try:  # pragma: no cover - optional dependency
 except Exception:  # pragma: no cover
     pyodbc = SimpleNamespace(Error=Exception)
 
-from enkibot import config # For DB_CONNECTION_STRING
+from enkibot import config  # For DB_CONNECTION_STRING
 
 logger = logging.getLogger(__name__)
+
 
 class DatabaseManager:
     def __init__(self, connection_string: Optional[str]):
         self.connection_string = connection_string
         if not self.connection_string:
-            logger.warning("Database connection string is not configured. Database operations will be disabled.")
+            logger.warning(
+                "Database connection string is not configured. Database operations will be disabled."
+            )
+
+    def _log_db_error(
+        self, context: str, query: str, params: Optional[tuple], err: Exception
+    ) -> None:
+        msg = str(err)
+        lower = msg.lower()
+        hint = ""
+        if "no such table" in lower or "does not exist" in lower:
+            hint = " Possible missing table."
+        elif "no such column" in lower or "unknown column" in lower:
+            hint = " Possible missing column."
+        logger.error(
+            f"{context} DB error on '{query[:100]}...' with params {params}: {msg}{hint}",
+            exc_info=True,
+        )
 
     def get_db_connection(self) -> Optional[Any]:
         if not self.connection_string or not hasattr(pyodbc, "connect"):
-            logger.warning("Database connection unavailable: missing connection string or pyodbc.")
+            logger.warning(
+                "Database connection unavailable: missing connection string or pyodbc."
+            )
             return None
         try:
             conn = pyodbc.connect(self.connection_string, autocommit=False)
             logger.debug("Database connection established.")
             return conn
         except pyodbc.Error as ex:
-            logger.error(f"Database connection error: {ex.args[0] if ex.args else ''} - {ex}", exc_info=True)
+            logger.error(
+                f"Database connection error: {ex.args[0] if ex.args else ''} - {ex}",
+                exc_info=True,
+            )
             return None
         except Exception as e:
-            logger.error(f"Unexpected error establishing database connection: {e}", exc_info=True)
+            logger.error(
+                f"Unexpected error establishing database connection: {e}", exc_info=True
+            )
             return None
 
-    async def execute_query(self, query: str, params: Optional[tuple] = None, fetch_one: bool = False, fetch_all: bool = False, commit: bool = False):
+    async def execute_query(
+        self,
+        query: str,
+        params: Optional[tuple] = None,
+        fetch_one: bool = False,
+        fetch_all: bool = False,
+        commit: bool = False,
+    ):
         if not self.connection_string:
             logger.warning("Query execution skipped: Database not configured.")
             return None if fetch_one or fetch_all else (True if commit else False)
@@ -93,35 +125,50 @@ class DatabaseManager:
                     return rows
             return True
         except pyodbc.Error as ex:
-            logger.error(f"DB query error on '{query[:100]}...': {ex}", exc_info=True)
-            try: conn.rollback(); logger.info("Transaction rolled back.")
-            except pyodbc.Error as rb_ex: logger.error(f"Error during rollback: {rb_ex}", exc_info=True)
+            self._log_db_error("Query", query, params, ex)
+            try:
+                conn.rollback()
+                logger.info("Transaction rolled back.")
+            except pyodbc.Error as rb_ex:
+                logger.error(f"Error during rollback: {rb_ex}", exc_info=True)
             return None if fetch_one or fetch_all else False
         except Exception as e:
-            logger.error(f"Unexpected error query execution '{query[:100]}...': {e}", exc_info=True)
+            self._log_db_error("Query", query, params, e)
             return None if fetch_one or fetch_all else False
         finally:
-             if conn:
+            if conn:
                 conn.close()
                 logger.debug("DB connection closed post-exec.")
 
     async def get_recent_chat_texts(self, chat_id: int, limit: int = 3) -> List[str]:
-        if not self.connection_string: return []
+        if not self.connection_string:
+            return []
         query = """
             SELECT TOP (?) MessageText FROM ChatLog
             WHERE ChatID = ? AND MessageText IS NOT NULL AND RTRIM(LTRIM(MessageText)) != ''
             ORDER BY Timestamp DESC
         """
-        actual_limit = max(1, limit) 
+        actual_limit = max(1, limit)
         rows = await self.execute_query(query, (actual_limit, chat_id), fetch_all=True)
-        return [row.MessageText for row in reversed(rows) if row.MessageText] if rows else []
+        return (
+            [row.MessageText for row in reversed(rows) if row.MessageText]
+            if rows
+            else []
+        )
 
     async def log_chat_message_and_upsert_user(
-        self, chat_id: int, user_id: int, username: Optional[str],
-        first_name: Optional[str], last_name: Optional[str],
-        message_id: int, message_text: str, preferred_language: Optional[str] = None
+        self,
+        chat_id: int,
+        user_id: int,
+        username: Optional[str],
+        first_name: Optional[str],
+        last_name: Optional[str],
+        message_id: int,
+        message_text: str,
+        preferred_language: Optional[str] = None,
     ) -> Optional[str]:
-        if not self.connection_string: return None
+        if not self.connection_string:
+            return None
         upsert_user_sql = """
             MERGE UserProfiles AS t
             USING (VALUES(?,?,?,?,GETDATE(),?)) AS s(UserID,Username,FirstName,LastName,LastSeen,PreferredLanguage)
@@ -135,24 +182,42 @@ class DatabaseManager:
         """
         user_params = (user_id, username, first_name, last_name, preferred_language)
         chat_log_sql = "INSERT INTO ChatLog (ChatID, UserID, Username, FirstName, MessageID, MessageText, Timestamp) VALUES (?, ?, ?, ?, ?, ?, GETDATE())"
-        chat_log_params = (chat_id, user_id, username, first_name, message_id, message_text)
+        chat_log_params = (
+            chat_id,
+            user_id,
+            username,
+            first_name,
+            message_id,
+            message_text,
+        )
         conn = self.get_db_connection()
-        if not conn: return None
+        if not conn:
+            return None
         action_taken = None
         try:
             with conn.cursor() as cursor:
                 cursor.execute(upsert_user_sql, user_params)
-                row = cursor.fetchone();
-                if row: action_taken = row.Action
+                row = cursor.fetchone()
+                if row:
+                    action_taken = row.Action
                 cursor.execute(chat_log_sql, chat_log_params)
             conn.commit()
-            logger.info(f"Logged message for user {user_id}. Profile action: {action_taken}")
+            logger.info(
+                f"Logged message for user {user_id}. Profile action: {action_taken}"
+            )
             return action_taken
         except pyodbc.Error as ex:
-            logger.error(f"DB error logging/upserting user {user_id}: {ex}", exc_info=True); conn.rollback()
+            self._log_db_error(
+                "log_chat_message_and_upsert_user",
+                upsert_user_sql,
+                user_params,
+                ex,
+            )
+            conn.rollback()
         finally:
-            if conn: conn.close()
-        return None # Ensure a return path if try fails before commit
+            if conn:
+                conn.close()
+        return None  # Ensure a return path if try fails before commit
 
     async def log_assistant_invocation(
         self,
@@ -189,55 +254,113 @@ class DatabaseManager:
         )
         await self.execute_query(sql, params, commit=True)
 
-    async def get_conversation_history(self, chat_id: int, limit: int = 20) -> List[Dict[str, str]]:
+    async def get_conversation_history(
+        self, chat_id: int, limit: int = 20
+    ) -> List[Dict[str, str]]:
         query = "SELECT TOP (?) Role, Content FROM ConversationHistory WHERE ChatID = ? ORDER BY Timestamp DESC"
         rows = await self.execute_query(query, (limit, chat_id), fetch_all=True)
-        return [{"role": row.Role.lower(), "content": row.Content} for row in reversed(rows)] if rows else []
+        return (
+            [
+                {"role": row.Role.lower(), "content": row.Content}
+                for row in reversed(rows)
+            ]
+            if rows
+            else []
+        )
 
-    async def save_to_conversation_history(self, chat_id: int, entity_id: int, message_id_telegram: Optional[int], role: str, content: str):
+    async def save_to_conversation_history(
+        self,
+        chat_id: int,
+        entity_id: int,
+        message_id_telegram: Optional[int],
+        role: str,
+        content: str,
+    ):
         query = "INSERT INTO ConversationHistory (ChatID, UserID, MessageID, Role, Content, Timestamp) VALUES (?, ?, ?, ?, ?, GETDATE())"
-        await self.execute_query(query, (chat_id, entity_id, message_id_telegram, role, content), commit=True)
+        await self.execute_query(
+            query, (chat_id, entity_id, message_id_telegram, role, content), commit=True
+        )
 
     async def get_user_profile_notes(self, user_id: int) -> Optional[str]:
-        row = await self.execute_query("SELECT Notes FROM UserProfiles WHERE UserID = ?", (user_id,), fetch_one=True)
+        row = await self.execute_query(
+            "SELECT Notes FROM UserProfiles WHERE UserID = ?",
+            (user_id,),
+            fetch_one=True,
+        )
         return row.Notes if row and row.Notes else None
 
     async def update_user_profile_notes(self, user_id: int, notes: str):
-        await self.execute_query("UPDATE UserProfiles SET Notes = ?, ProfileLastUpdated = GETDATE() WHERE UserID = ?", (notes, user_id), commit=True)
+        await self.execute_query(
+            "UPDATE UserProfiles SET Notes = ?, ProfileLastUpdated = GETDATE() WHERE UserID = ?",
+            (notes, user_id),
+            commit=True,
+        )
         logger.info(f"Profile notes updated for user {user_id}.")
 
     async def save_user_name_variations(self, user_id: int, variations: List[str]):
-        if not self.connection_string or not variations: return
+        if not self.connection_string or not variations:
+            return
         sql_merge = """
             MERGE INTO UserNameVariations AS t USING (SELECT ? AS UserID, ? AS NameVariation) AS s
             ON (t.UserID = s.UserID AND t.NameVariation = s.NameVariation)
             WHEN NOT MATCHED THEN INSERT (UserID, NameVariation) VALUES (s.UserID, s.NameVariation);
         """
         conn = self.get_db_connection()
-        if not conn: return
+        if not conn:
+            return
         try:
             with conn.cursor() as cursor:
-                params_to_insert = [(user_id, var) for var in variations if var and str(var).strip()]
-                if params_to_insert: cursor.executemany(sql_merge, params_to_insert)
+                params_to_insert = [
+                    (user_id, var) for var in variations if var and str(var).strip()
+                ]
+                if params_to_insert:
+                    cursor.executemany(sql_merge, params_to_insert)
             conn.commit()
-            logger.info(f"Saved/updated {len(params_to_insert)} name vars for user {user_id}.")
+            logger.info(
+                f"Saved/updated {len(params_to_insert)} name vars for user {user_id}."
+            )
         except pyodbc.Error as ex:
-            logger.error(f"DB error saving name vars for user {user_id}: {ex}", exc_info=True); conn.rollback()
+            logger.error(
+                f"DB error saving name vars for user {user_id}: {ex}", exc_info=True
+            )
+            conn.rollback()
         finally:
-            if conn: conn.close()
-            
-    async def find_user_profiles_by_name_variation(self, name_variation_query: str) -> List[Dict[str, Any]]:
+            if conn:
+                conn.close()
+
+    async def find_user_profiles_by_name_variation(
+        self, name_variation_query: str
+    ) -> List[Dict[str, Any]]:
         query = """
             SELECT DISTINCT up.UserID, up.FirstName, up.LastName, up.Username, up.Notes
             FROM UserProfiles up JOIN UserNameVariations unv ON up.UserID = unv.UserID
             WHERE unv.NameVariation = ?
         """
-        rows = await self.execute_query(query, (name_variation_query.lower(),), fetch_all=True)
-        return [{"UserID": r.UserID, "FirstName": r.FirstName, "LastName": r.LastName, "Username": r.Username, "Notes": r.Notes} for r in rows] if rows else []
+        rows = await self.execute_query(
+            query, (name_variation_query.lower(),), fetch_all=True
+        )
+        return (
+            [
+                {
+                    "UserID": r.UserID,
+                    "FirstName": r.FirstName,
+                    "LastName": r.LastName,
+                    "Username": r.Username,
+                    "Notes": r.Notes,
+                }
+                for r in rows
+            ]
+            if rows
+            else []
+        )
 
-    async def get_user_messages_from_chat_log(self, user_id: int, chat_id: int, limit: int = 10) -> List[str]: # Kept from previous version
+    async def get_user_messages_from_chat_log(
+        self, user_id: int, chat_id: int, limit: int = 10
+    ) -> List[str]:  # Kept from previous version
         query = "SELECT TOP (?) MessageText FROM ChatLog WHERE UserID = ? AND ChatID = ? AND MessageText IS NOT NULL AND RTRIM(LTRIM(MessageText)) != '' ORDER BY Timestamp DESC"
-        rows = await self.execute_query(query, (limit, user_id, chat_id), fetch_all=True)
+        rows = await self.execute_query(
+            query, (limit, user_id, chat_id), fetch_all=True
+        )
         return [row.MessageText for row in rows] if rows else []
 
     async def _ensure_user_usage_table(self):
@@ -256,7 +379,9 @@ class DatabaseManager:
             commit=True,
         )
 
-    async def get_daily_usage(self, user_id: int, usage_date: Optional[date] = None) -> Dict[str, int]:
+    async def get_daily_usage(
+        self, user_id: int, usage_date: Optional[date] = None
+    ) -> Dict[str, int]:
         usage_date = usage_date or date.today()
         await self._ensure_user_usage_table()
         row = await self.execute_query(
@@ -268,7 +393,9 @@ class DatabaseManager:
             return {"llm": row.LlmCount or 0, "image": row.ImageCount or 0}
         return {"llm": 0, "image": 0}
 
-    async def increment_usage(self, user_id: int, usage_type: str, usage_date: Optional[date] = None):
+    async def increment_usage(
+        self, user_id: int, usage_type: str, usage_date: Optional[date] = None
+    ):
         usage_date = usage_date or date.today()
         column = "LlmCount" if usage_type == "llm" else "ImageCount"
         await self._ensure_user_usage_table()
@@ -280,7 +407,13 @@ class DatabaseManager:
         """
         await self.execute_query(sql, (user_id, usage_date), commit=True)
 
-    async def check_and_increment_usage(self, user_id: int, usage_type: str, daily_limit: int, usage_date: Optional[date] = None) -> bool:
+    async def check_and_increment_usage(
+        self,
+        user_id: int,
+        usage_type: str,
+        daily_limit: int,
+        usage_date: Optional[date] = None,
+    ) -> bool:
         usage_date = usage_date or date.today()
         usage = await self.get_daily_usage(user_id, usage_date)
         if usage.get(usage_type, 0) >= daily_limit:
@@ -307,7 +440,9 @@ class DatabaseManager:
         )
         return bool(row)
 
-    async def add_spam_vote(self, chat_id: int, target_user_id: int, reporter_user_id: int) -> bool:
+    async def add_spam_vote(
+        self, chat_id: int, target_user_id: int, reporter_user_id: int
+    ) -> bool:
         """Records a spam vote if one doesn't already exist for this reporter/target pair."""
         if not self.connection_string:
             return False
@@ -325,7 +460,7 @@ class DatabaseManager:
                 cursor.execute(sql, (chat_id, target_user_id, reporter_user_id))
                 row = cursor.fetchone()
             conn.commit()
-            return bool(row and row.Action == 'INSERT')
+            return bool(row and row.Action == "INSERT")
         except pyodbc.Error as ex:
             logger.error(f"DB error adding spam vote: {ex}", exc_info=True)
             try:
@@ -337,14 +472,18 @@ class DatabaseManager:
             if conn:
                 conn.close()
 
-    async def count_spam_votes(self, chat_id: int, target_user_id: int, window_minutes: int) -> int:
+    async def count_spam_votes(
+        self, chat_id: int, target_user_id: int, window_minutes: int
+    ) -> int:
         """Returns the number of unique reporters within the given timeframe."""
         query = (
             "SELECT COUNT(DISTINCT ReporterUserID) AS VoteCount FROM SpamReports "
             "WHERE ChatID = ? AND TargetUserID = ? AND Timestamp > DATEADD(MINUTE, ?, GETDATE())"
         )
-        row = await self.execute_query(query, (chat_id, target_user_id, -abs(window_minutes)), fetch_one=True)
-        return row.VoteCount if row and hasattr(row, 'VoteCount') else 0
+        row = await self.execute_query(
+            query, (chat_id, target_user_id, -abs(window_minutes)), fetch_one=True
+        )
+        return row.VoteCount if row and hasattr(row, "VoteCount") else 0
 
     async def clear_spam_votes(self, chat_id: int, target_user_id: int):
         await self.execute_query(
@@ -353,13 +492,15 @@ class DatabaseManager:
             commit=True,
         )
 
-    async def get_spam_vote_threshold(self, chat_id: int, default_threshold: int) -> int:
+    async def get_spam_vote_threshold(
+        self, chat_id: int, default_threshold: int
+    ) -> int:
         row = await self.execute_query(
             "SELECT SpamVoteThreshold FROM ChatSettings WHERE ChatID = ?",
             (chat_id,),
             fetch_one=True,
         )
-        if row and hasattr(row, 'SpamVoteThreshold') and row.SpamVoteThreshold:
+        if row and hasattr(row, "SpamVoteThreshold") and row.SpamVoteThreshold:
             return row.SpamVoteThreshold
         await self.execute_query(
             "INSERT INTO ChatSettings (ChatID, SpamVoteThreshold) VALUES (?, ?)",
@@ -398,7 +539,7 @@ class DatabaseManager:
             (chat_id,),
             fetch_one=True,
         )
-        if row and hasattr(row, 'NSFWFilterEnabled'):
+        if row and hasattr(row, "NSFWFilterEnabled"):
             return bool(row.NSFWFilterEnabled)
         await self.execute_query(
             "INSERT INTO ChatSettings (ChatID, SpamVoteThreshold, NSFWFilterEnabled, NSFWThreshold) VALUES (?, ?, ?, ?)",
@@ -419,7 +560,12 @@ class DatabaseManager:
             "ON t.ChatID=s.ChatID "
             "WHEN MATCHED THEN UPDATE SET NSFWFilterEnabled=s.NSFWFilterEnabled "
             "WHEN NOT MATCHED THEN INSERT (ChatID,SpamVoteThreshold,NSFWFilterEnabled,NSFWThreshold) VALUES (s.ChatID,s.SpamVoteThreshold,s.NSFWFilterEnabled,s.NSFWThreshold);",
-            (chat_id, config.DEFAULT_SPAM_VOTE_THRESHOLD, int(enabled), config.NSFW_DETECTION_THRESHOLD),
+            (
+                chat_id,
+                config.DEFAULT_SPAM_VOTE_THRESHOLD,
+                int(enabled),
+                config.NSFW_DETECTION_THRESHOLD,
+            ),
             commit=True,
         )
 
@@ -430,7 +576,7 @@ class DatabaseManager:
             (chat_id,),
             fetch_one=True,
         )
-        if row and hasattr(row, 'NSFWThreshold') and row.NSFWThreshold is not None:
+        if row and hasattr(row, "NSFWThreshold") and row.NSFWThreshold is not None:
             return float(row.NSFWThreshold)
         await self.execute_query(
             "INSERT INTO ChatSettings (ChatID, SpamVoteThreshold, NSFWFilterEnabled, NSFWThreshold) VALUES (?, ?, ?, ?)",
@@ -451,11 +597,18 @@ class DatabaseManager:
             "ON t.ChatID=s.ChatID "
             "WHEN MATCHED THEN UPDATE SET NSFWThreshold=s.NSFWThreshold "
             "WHEN NOT MATCHED THEN INSERT (ChatID,SpamVoteThreshold,NSFWFilterEnabled,NSFWThreshold) VALUES (s.ChatID,s.SpamVoteThreshold,s.NSFWFilterEnabled,s.NSFWThreshold);",
-            (chat_id, config.DEFAULT_SPAM_VOTE_THRESHOLD, int(config.NSFW_FILTER_DEFAULT_ENABLED), threshold),
+            (
+                chat_id,
+                config.DEFAULT_SPAM_VOTE_THRESHOLD,
+                int(config.NSFW_FILTER_DEFAULT_ENABLED),
+                threshold,
+            ),
             commit=True,
         )
 
-    async def add_warning(self, chat_id: int, user_id: int, reason: Optional[str] = None) -> int:
+    async def add_warning(
+        self, chat_id: int, user_id: int, reason: Optional[str] = None
+    ) -> int:
         """Increment warning count for a user and return new count."""
         if not self.connection_string:
             return 0
@@ -474,7 +627,7 @@ class DatabaseManager:
                 cursor.execute(sql, (chat_id, user_id, reason))
                 row = cursor.fetchone()
             conn.commit()
-            return row.WarnCount if row and hasattr(row, 'WarnCount') else 0
+            return row.WarnCount if row and hasattr(row, "WarnCount") else 0
         except pyodbc.Error as ex:
             logger.error(f"DB error adding warning: {ex}", exc_info=True)
             try:
@@ -492,7 +645,7 @@ class DatabaseManager:
             (chat_id, user_id),
             fetch_one=True,
         )
-        return row.WarnCount if row and hasattr(row, 'WarnCount') else 0
+        return row.WarnCount if row and hasattr(row, "WarnCount") else 0
 
     async def clear_warnings(self, chat_id: int, user_id: int):
         await self.execute_query(
@@ -509,7 +662,13 @@ class DatabaseManager:
         )
         return [(r.UserID, r.WarnCount) for r in rows] if rows else []
 
-    async def log_moderation_action(self, chat_id: int, user_id: Optional[int], message_id: int, categories: Optional[str]):
+    async def log_moderation_action(
+        self,
+        chat_id: int,
+        user_id: Optional[int],
+        message_id: int,
+        categories: Optional[str],
+    ):
         """Persist a moderation action to the database for audit purposes."""
         await self.execute_query(
             "INSERT INTO ModerationLog (ChatID, UserID, MessageID, Categories) VALUES (?, ?, ?, ?)",
@@ -553,7 +712,9 @@ class DatabaseManager:
             params.append(details)
 
         placeholders = ", ".join(["?"] * len(params))
-        query = f"INSERT INTO FactCheckLog ({', '.join(columns)}) VALUES ({placeholders})"
+        query = (
+            f"INSERT INTO FactCheckLog ({', '.join(columns)}) VALUES ({placeholders})"
+        )
 
         await self.execute_query(query, tuple(params), commit=True)
 
@@ -666,7 +827,9 @@ class DatabaseManager:
                     (chat_id, user_id),
                 )
                 row = cursor.fetchone()
-                version = int(row.next_version if row and hasattr(row, "next_version") else 1)
+                version = int(
+                    row.next_version if row and hasattr(row, "next_version") else 1
+                )
                 cursor.execute(
                     "INSERT INTO user_persona_versions (chat_id, user_id, version, portrait_md, traits_json, signals_json) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
@@ -704,17 +867,20 @@ class DatabaseManager:
             "signals_json": row.signals_json if hasattr(row, "signals_json") else None,
         }
 
-def initialize_database(): # This function defines and uses DatabaseManager locally
+
+def initialize_database():  # This function defines and uses DatabaseManager locally
     if not config.DB_CONNECTION_STRING:
         logger.warning("Cannot initialize database: Connection string not configured.")
         return
-    
-    db_mngr = DatabaseManager(config.DB_CONNECTION_STRING) 
-    conn = db_mngr.get_db_connection() 
-    if not conn: 
-        logger.error("Failed to connect to database for initialization (initialize_database).")
+
+    db_mngr = DatabaseManager(config.DB_CONNECTION_STRING)
+    conn = db_mngr.get_db_connection()
+    if not conn:
+        logger.error(
+            "Failed to connect to database for initialization (initialize_database)."
+        )
         return
-    
+
     conn.autocommit = True
     table_queries = {
         "UserProfiles": "CREATE TABLE UserProfiles (UserID BIGINT PRIMARY KEY, Username NVARCHAR(255) NULL, FirstName NVARCHAR(255) NULL, LastName NVARCHAR(255) NULL, LastSeen DATETIME2 DEFAULT GETDATE(), MessageCount INT DEFAULT 0, PreferredLanguage NVARCHAR(10) NULL, Notes NVARCHAR(MAX) NULL, ProfileLastUpdated DATETIME2 DEFAULT GETDATE(), KarmaReceived INT NOT NULL DEFAULT 0, KarmaGiven INT NOT NULL DEFAULT 0, HateGiven INT NOT NULL DEFAULT 0);",
@@ -928,7 +1094,9 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
             logger.info("Initializing database tables...")
             for name, query in table_queries.items():
                 # Some queries are defined as tuples for readability; join them into a single string.
-                query_str = " ".join(query) if isinstance(query, (tuple, list)) else query
+                query_str = (
+                    " ".join(query) if isinstance(query, (tuple, list)) else query
+                )
 
                 is_idx = name.startswith("IX_")
                 obj_type = "INDEX" if is_idx else "TABLE"
@@ -952,14 +1120,18 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
                     else "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?"
                 )
                 params_check = (
-                    (obj_name_to_check, table_for_index) if is_idx else (obj_name_to_check,)
+                    (obj_name_to_check, table_for_index)
+                    if is_idx
+                    else (obj_name_to_check,)
                 )
 
                 cursor.execute(check_q, params_check)
                 if cursor.fetchone():
                     logger.info(f"{obj_type} '{obj_name_to_check}' already exists.")
                 else:
-                    logger.info(f"{obj_type} '{obj_name_to_check}' not found. Creating...")
+                    logger.info(
+                        f"{obj_type} '{obj_name_to_check}' not found. Creating..."
+                    )
                     cursor.execute(query_str)
                     logger.info(f"{obj_type} '{obj_name_to_check}' created.")
 
@@ -975,10 +1147,16 @@ def initialize_database(): # This function defines and uses DatabaseManager loca
                     (col_name,),
                 )
                 if cursor.fetchone():
-                    logger.info(f"Column '{col_name}' already exists in 'UserProfiles'.")
+                    logger.info(
+                        f"Column '{col_name}' already exists in 'UserProfiles'."
+                    )
                 else:
-                    logger.info(f"Column '{col_name}' missing in 'UserProfiles'. Adding...")
-                    cursor.execute(f"ALTER TABLE UserProfiles ADD {col_name} {definition}")
+                    logger.info(
+                        f"Column '{col_name}' missing in 'UserProfiles'. Adding..."
+                    )
+                    cursor.execute(
+                        f"ALTER TABLE UserProfiles ADD {col_name} {definition}"
+                    )
                     logger.info(f"Column '{col_name}' added to 'UserProfiles'.")
 
             logger.info("Database initialization check complete.")

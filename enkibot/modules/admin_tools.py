@@ -34,6 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
+import logging
 
 from sqlalchemy import (
     BigInteger,
@@ -45,6 +46,7 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 
 from telegram import (
     InlineKeyboardButton,
@@ -62,11 +64,15 @@ from telegram.ext import (
 
 from enkibot.core.language_service import LanguageService
 
+# Configure module level logger
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Database setup
 # ---------------------------------------------------------------------------
 
 Base = declarative_base()
+
 
 class ModerationAction(Base):
     __tablename__ = "moderation_actions"
@@ -79,6 +85,7 @@ class ModerationAction(Base):
     until_ts = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
 class Warning(Base):
     __tablename__ = "warnings"
     warn_id = Column(Integer, primary_key=True, autoincrement=True)
@@ -86,6 +93,7 @@ class Warning(Base):
     user_id = Column(BigInteger, index=True)
     reason = Column(String(64))
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 class ModeratorNote(Base):
     __tablename__ = "moderator_notes"
@@ -99,6 +107,7 @@ class ModeratorNote(Base):
 # ---------------------------------------------------------------------------
 # Utility helpers
 # ---------------------------------------------------------------------------
+
 
 def parse_duration(duration: str) -> Optional[int]:
     """Parse a short duration spec like ``10m`` or ``1h``.
@@ -133,6 +142,7 @@ FULL_PERMS = ChatPermissions(
 # Administrative service
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AdminTools:
     """Container for moderation logic.
@@ -152,8 +162,15 @@ class AdminTools:
     engine_url: str = "sqlite:///admin_tools.sqlite3"
 
     def __post_init__(self) -> None:
-        self.engine = create_engine(self.engine_url, future=True)
-        Base.metadata.create_all(self.engine)
+        try:
+            self.engine = create_engine(self.engine_url, future=True)
+            Base.metadata.create_all(self.engine)
+        except SQLAlchemyError:
+            logger.error(
+                "Database initialization failed. Ensure required tables and columns exist.",
+                exc_info=True,
+            )
+            raise
         self.Session = sessionmaker(self.engine, expire_on_commit=False)
         self._register_handlers()
 
@@ -189,10 +206,34 @@ class AdminTools:
         )
         return False
 
-    def _log_action(self, chat_id: int, target_id: int, action: str, reason: str | None = None, until: datetime | None = None) -> None:
-        with self.Session() as s:
-            s.add(ModerationAction(chat_id=chat_id, target_user_id=target_id, action=action, reason=reason or "", until_ts=until))
-            s.commit()
+    def _log_action(
+        self,
+        chat_id: int,
+        target_id: int,
+        action: str,
+        reason: str | None = None,
+        until: datetime | None = None,
+    ) -> None:
+        try:
+            with self.Session() as s:
+                s.add(
+                    ModerationAction(
+                        chat_id=chat_id,
+                        target_user_id=target_id,
+                        action=action,
+                        reason=reason or "",
+                        until_ts=until,
+                    )
+                )
+                s.commit()
+        except SQLAlchemyError:
+            logger.error(
+                "Failed to log moderation action '%s' for user %s in chat %s",
+                action,
+                target_id,
+                chat_id,
+                exc_info=True,
+            )
 
     # ------------------------------------------------------------------
     # Command implementations
@@ -201,14 +242,28 @@ class AdminTools:
         if not await self._ensure_admin(update):
             return
         if not update.message or not update.message.reply_to_message:
-            await update.effective_message.reply_text("Reply to a user with /ban [reason].")
+            await update.effective_message.reply_text(
+                "Reply to a user with /ban [reason]."
+            )
             return
         reason = " ".join(context.args) if context.args else ""
         target = update.message.reply_to_message.from_user
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("Confirm ban", callback_data=f"mod:ban:{target.id}:{reason}")]])
-        await update.effective_message.reply_text("Confirm permanent ban?", reply_markup=kb)
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "Confirm ban", callback_data=f"mod:ban:{target.id}:{reason}"
+                    )
+                ]
+            ]
+        )
+        await update.effective_message.reply_text(
+            "Confirm permanent ban?", reply_markup=kb
+        )
 
-    async def cmd_unban(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def cmd_unban(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         if not await self._ensure_admin(update):
             return
         target_id = None
@@ -226,10 +281,16 @@ class AdminTools:
         self._log_action(update.effective_chat.id, target_id, "unban")
         await update.effective_message.reply_text("User unbanned.")
 
-    async def cmd_mute(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def cmd_mute(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         if not await self._ensure_admin(update):
             return
-        if not update.message or not update.message.reply_to_message or not context.args:
+        if (
+            not update.message
+            or not update.message.reply_to_message
+            or not context.args
+        ):
             await update.effective_message.reply_text("Usage: /mute <10m|1h> [reason]")
             return
         seconds = parse_duration(context.args[0])
@@ -238,39 +299,81 @@ class AdminTools:
             return
         reason = " ".join(context.args[1:]) if len(context.args) > 1 else ""
         target = update.message.reply_to_message.from_user
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("Confirm mute", callback_data=f"mod:mute:{target.id}:{seconds}:{reason}")]])
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "Confirm mute",
+                        callback_data=f"mod:mute:{target.id}:{seconds}:{reason}",
+                    )
+                ]
+            ]
+        )
         await update.effective_message.reply_text("Confirm mute?", reply_markup=kb)
 
-    async def cmd_unmute(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def cmd_unmute(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         if not await self._ensure_admin(update):
             return
         if not update.message or not update.message.reply_to_message:
             await update.effective_message.reply_text("Reply to a user with /unmute.")
             return
         target = update.message.reply_to_message.from_user
-        await context.bot.restrict_chat_member(update.effective_chat.id, target.id, permissions=FULL_PERMS)
+        await context.bot.restrict_chat_member(
+            update.effective_chat.id, target.id, permissions=FULL_PERMS
+        )
         self._log_action(update.effective_chat.id, target.id, "unmute")
         await update.effective_message.reply_text("User unmuted.")
 
-    async def cmd_warn(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def cmd_warn(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         if not await self._ensure_admin(update):
             return
         if not update.message or not update.message.reply_to_message:
-            await update.effective_message.reply_text("Reply to a user with /warn [reason].")
+            await update.effective_message.reply_text(
+                "Reply to a user with /warn [reason]."
+            )
             return
         target = update.message.reply_to_message.from_user
         reason = " ".join(context.args) if context.args else ""
-        with self.Session() as s:
-            s.add(Warning(chat_id=update.effective_chat.id, user_id=target.id, reason=reason))
-            s.commit()
-            count = (
-                s.query(Warning)
-                .filter(Warning.chat_id == update.effective_chat.id, Warning.user_id == target.id)
-                .count()
+        try:
+            with self.Session() as s:
+                s.add(
+                    Warning(
+                        chat_id=update.effective_chat.id,
+                        user_id=target.id,
+                        reason=reason,
+                    )
+                )
+                s.commit()
+                count = (
+                    s.query(Warning)
+                    .filter(
+                        Warning.chat_id == update.effective_chat.id,
+                        Warning.user_id == target.id,
+                    )
+                    .count()
+                )
+        except SQLAlchemyError:
+            logger.error(
+                "Failed to store warning for user %s in chat %s",
+                target.id,
+                update.effective_chat.id,
+                exc_info=True,
             )
-        await update.effective_message.reply_html(f"⚠️ {target.mention_html()} warned (#{count}). Reason: {reason or '—'}")
+            await update.effective_message.reply_text(
+                "Database error while storing warning."
+            )
+            return
+        await update.effective_message.reply_html(
+            f"⚠️ {target.mention_html()} warned (#{count}). Reason: {reason or '—'}"
+        )
 
-    async def cmd_warns(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def cmd_warns(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         if not await self._ensure_admin(update):
             return
         target = None
@@ -278,27 +381,48 @@ class AdminTools:
             target = update.message.reply_to_message.from_user
         elif context.args:
             try:
-                target = await context.bot.get_chat_member(update.effective_chat.id, int(context.args[0]))
+                target = await context.bot.get_chat_member(
+                    update.effective_chat.id, int(context.args[0])
+                )
                 target = target.user
             except Exception:
                 target = None
         if not target:
-            await update.effective_message.reply_text("Usage: /warns_list (reply or user_id)")
-            return
-        with self.Session() as s:
-            warns = (
-                s.query(Warning)
-                .filter(Warning.chat_id == update.effective_chat.id, Warning.user_id == target.id)
-                .order_by(Warning.created_at.desc())
-                .all()
+            await update.effective_message.reply_text(
+                "Usage: /warns_list (reply or user_id)"
             )
+            return
+        try:
+            with self.Session() as s:
+                warns = (
+                    s.query(Warning)
+                    .filter(
+                        Warning.chat_id == update.effective_chat.id,
+                        Warning.user_id == target.id,
+                    )
+                    .order_by(Warning.created_at.desc())
+                    .all()
+                )
+        except SQLAlchemyError:
+            logger.error(
+                "Failed to fetch warnings for user %s in chat %s",
+                target.id,
+                update.effective_chat.id,
+                exc_info=True,
+            )
+            await update.effective_message.reply_text(
+                "Database error while fetching warnings."
+            )
+            return
         if not warns:
             await update.effective_message.reply_text("No warnings.")
             return
         lines = [f"{w.created_at:%Y-%m-%d} • {w.reason or '-'}" for w in warns[:20]]
         await update.effective_message.reply_text("\n".join(lines))
 
-    async def cmd_rm_warn(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def cmd_rm_warn(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         if not await self._ensure_admin(update):
             return
         target = None
@@ -306,60 +430,115 @@ class AdminTools:
             target = update.message.reply_to_message.from_user
         elif context.args:
             try:
-                target = await context.bot.get_chat_member(update.effective_chat.id, int(context.args[0]))
+                target = await context.bot.get_chat_member(
+                    update.effective_chat.id, int(context.args[0])
+                )
                 target = target.user
             except Exception:
                 target = None
         if not target:
-            await update.effective_message.reply_text("Usage: /rm_warn (reply or user_id) [count|all]")
+            await update.effective_message.reply_text(
+                "Usage: /rm_warn (reply or user_id) [count|all]"
+            )
             return
         count_arg = context.args[1] if len(context.args) > 1 else "1"
-        with self.Session() as s:
-            q = s.query(Warning).filter(Warning.chat_id == update.effective_chat.id, Warning.user_id == target.id)
-            if count_arg == "all":
-                removed = q.count()
-                q.delete()
-            else:
-                try:
-                    n = int(count_arg)
-                except ValueError:
-                    n = 1
-                warns = q.order_by(Warning.created_at.desc()).limit(n).all()
-                removed = len(warns)
-                for w in warns:
-                    s.delete(w)
-            s.commit()
+        try:
+            with self.Session() as s:
+                q = s.query(Warning).filter(
+                    Warning.chat_id == update.effective_chat.id,
+                    Warning.user_id == target.id,
+                )
+                if count_arg == "all":
+                    removed = q.count()
+                    q.delete()
+                else:
+                    try:
+                        n = int(count_arg)
+                    except ValueError:
+                        n = 1
+                    warns = q.order_by(Warning.created_at.desc()).limit(n).all()
+                    removed = len(warns)
+                    for w in warns:
+                        s.delete(w)
+                s.commit()
+        except SQLAlchemyError:
+            logger.error(
+                "Failed to remove warnings for user %s in chat %s",
+                target.id,
+                update.effective_chat.id,
+                exc_info=True,
+            )
+            await update.effective_message.reply_text(
+                "Database error while removing warnings."
+            )
+            return
         await update.effective_message.reply_text(f"Removed {removed} warning(s).")
 
-    async def cmd_note(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def cmd_note(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         if not await self._ensure_admin(update):
             return
-        if not update.message or not update.message.reply_to_message or not context.args:
-            await update.effective_message.reply_text("Reply to a user with /note <text>.")
+        if (
+            not update.message
+            or not update.message.reply_to_message
+            or not context.args
+        ):
+            await update.effective_message.reply_text(
+                "Reply to a user with /note <text>."
+            )
             return
         target = update.message.reply_to_message.from_user
         text = " ".join(context.args)
-        with self.Session() as s:
-            s.add(ModeratorNote(chat_id=update.effective_chat.id, user_id=target.id, note_text=text))
-            s.commit()
+        try:
+            with self.Session() as s:
+                s.add(
+                    ModeratorNote(
+                        chat_id=update.effective_chat.id,
+                        user_id=target.id,
+                        note_text=text,
+                    )
+                )
+                s.commit()
+        except SQLAlchemyError:
+            logger.error(
+                "Failed to store note for user %s in chat %s",
+                target.id,
+                update.effective_chat.id,
+                exc_info=True,
+            )
+            await update.effective_message.reply_text(
+                "Database error while storing note."
+            )
+            return
         await update.effective_message.reply_text("Note stored (private).")
 
-    async def cmd_shadowdel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def cmd_shadowdel(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         if not await self._ensure_admin(update):
             return
         if not update.message or not update.message.reply_to_message:
-            await update.effective_message.reply_text("Reply to a message with /shadowdel.")
+            await update.effective_message.reply_text(
+                "Reply to a message with /shadowdel."
+            )
             return
         try:
             await update.message.reply_to_message.delete()
         except Exception:
             pass
-        self._log_action(update.effective_chat.id, update.message.reply_to_message.from_user.id, "delete")
+        self._log_action(
+            update.effective_chat.id,
+            update.message.reply_to_message.from_user.id,
+            "delete",
+        )
 
     # ------------------------------------------------------------------
     # Confirmation callbacks
     # ------------------------------------------------------------------
-    async def on_confirm(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def on_confirm(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         q = update.callback_query
         await q.answer()
         try:
@@ -378,7 +557,12 @@ class AdminTools:
             seconds = int(rest[0]) if rest else 0
             reason = rest[1] if len(rest) > 1 else ""
             until = datetime.now(timezone.utc) + timedelta(seconds=seconds)
-            await context.bot.restrict_chat_member(chat_id, user_id_int, permissions=PERM_READ_ONLY, until_date=int(until.timestamp()))
+            await context.bot.restrict_chat_member(
+                chat_id,
+                user_id_int,
+                permissions=PERM_READ_ONLY,
+                until_date=int(until.timestamp()),
+            )
             self._log_action(chat_id, user_id_int, "mute", reason, until)
             await q.edit_message_text("User muted.")
         else:
