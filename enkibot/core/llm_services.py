@@ -167,6 +167,7 @@ class LLMServices:
                 input=messages,
                 tools=[{"type": "web_search_preview"}],
                 tool_choice={"type": "web_search_preview"},
+                reasoning={"effort": "medium"},
                 max_output_tokens=max_output_tokens,
             )
             latency = time.perf_counter() - start
