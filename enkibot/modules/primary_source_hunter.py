@@ -107,8 +107,9 @@ class PrimarySourceHunter:
         try:
             resp = await self.client.responses.create(
                 model=self.model_id,
-                tools=[{"type": "web_search"}],
-                tool_choice="auto",
+                tools=[{"type": "web_search_preview"}],
+                tool_choice={"type": "web_search_preview"},
+                reasoning={"effort": "high"},
                 instructions=(
                     "You are a primary-source hunter. Always include 3-6 sources (at least 1 primary). "
                     "Return a JSON array of objects with 'url' and 'title'."
