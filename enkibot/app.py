@@ -43,6 +43,7 @@ from enkibot.modules.fact_check import (
     FactCheckBot,
     SatireDetector,
     StanceModel,
+    OpenAIWebFetcher,
 )
 from enkibot.modules.primary_source_hunter import PrimarySourceHunter
 
@@ -121,6 +122,7 @@ class EnkiBotApplication:
         # Fact checking subsystem (skeleton implementation)
         # ------------------------------------------------------------------
         self.fact_checker = FactChecker(
+            fetcher=OpenAIWebFetcher(),
             stance=StanceModel(),
             llm_services=self.llm_services,
             primary_hunter=PrimarySourceHunter(),
