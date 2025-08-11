@@ -4,9 +4,9 @@ This document defines a **best‑of‑the‑best** mechanism for fact‑checking
 
 > **Model routing rules** (built‑in):
 >
-> * **Best quality:** `o3-deep-research` → embeddings → web tools/oracles → **reported verdict**
-> * **Balanced cost/latency:** `o4-mini-deep-research` → embeddings → web tools/oracles
-> * **Lots of images:** `GPT-4o` for extraction (OCR/Vision) → `o3`/`o4-mini` for synthesis, still **citing oracles**
+> * **Best quality (requires access):** `o3-deep-research` → embeddings → web tools/oracles → **reported verdict**
+> * **Default / balanced:** `o4-mini` → embeddings → web tools/oracles
+> * **Lots of images:** `GPT-4o` for extraction (OCR/Vision) → `o4-mini` or `o3-deep-research` for synthesis, still **citing oracles**
 
 ---
 
@@ -94,8 +94,8 @@ A two‑stage gate: cheap heuristics first, then a lightweight classifier. High 
 **Pipelines**
 
 * **Premium:** `o3-deep-research` + embeddings (candidate retrieval) + oracle tools → *reported verdict*.
-* **Balanced:** `o4-mini-deep-research` with same toolset.
-* **Vision‑heavy:** `GPT-4o` (extraction) → `o3/o4-mini` for planning/synthesis.
+* **Balanced:** `o4-mini` with same toolset.
+* **Vision‑heavy:** `GPT-4o` (extraction) → `o4-mini` or `o3-deep-research` for planning/synthesis.
 
 **Tool schema (examples)**
 
