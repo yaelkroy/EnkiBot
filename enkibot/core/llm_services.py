@@ -173,6 +173,23 @@ class LLMServices:
             return getattr(response, "output_text", None)
         except openai.APIError as e:
             logger.error(f"OpenAI API Error (deep research): {e.message}", exc_info=False)
+            # If the dedicated deep-research model is unavailable (e.g. 403
+            # model_not_found), fall back to the standard chat completion
+            # model so the bot still provides a best-effort answer.
+            try:
+                logger.info(
+                    "Falling back to standard OpenAI model %s", self.openai_model_id
+                )
+                return await self.call_openai_llm(
+                    messages,
+                    model_id=self.openai_model_id,
+                    temperature=0.0,
+                    max_tokens=max_output_tokens,
+                )
+            except Exception as fallback_err:  # pragma: no cover - rare
+                logger.error(
+                    "Fallback to standard OpenAI model failed: %s", fallback_err, exc_info=True
+                )
         except Exception as e:
             logger.error(f"Unexpected error with OpenAI deep research: {e}", exc_info=True)
         return None

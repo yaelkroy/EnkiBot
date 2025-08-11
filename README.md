@@ -53,9 +53,9 @@ EnkiBot is an intelligent and adaptable Telegram assistant designed for rich, co
 
 When performing news research with EnkiBot, choose models based on your quality and cost needs:
 
-* **Best quality:** `o3-deep-research` → embeddings → web tools → verdict.
-* **Balanced cost/latency:** `o4-mini-deep-research` → embeddings → web tools.
-* **Lots of images:** use `GPT-4o` for image extraction, then `o3-deep-research` or `o4-mini-deep-research` for the final judgment.
+* **Best quality (requires access):** `o3-deep-research` → embeddings → web tools → verdict.
+* **Default / balanced:** `o4-mini` → embeddings → web tools.
+* **Lots of images:** use `GPT-4o` for image extraction, then `o4-mini` or `o3-deep-research` for the final judgment.
 
 See [docs/news_research_guidelines.md](docs/news_research_guidelines.md) for details.
 
@@ -162,7 +162,7 @@ The project is organized into logical modules:
     # LLM API Keys & Models (provide at least OpenAI or one other)
     ENKI_BOT_OPENAI_API_KEY="sk-YOUR_OPENAI_KEY"
     ENKI_BOT_OPENAI_MODEL_ID="gpt-4.1-mini"
-    ENKI_BOT_OPENAI_DEEP_RESEARCH_MODEL_ID="o3-deep-research"
+    ENKI_BOT_OPENAI_DEEP_RESEARCH_MODEL_ID="o4-mini"  # or o3-deep-research if you have access
     ENKI_BOT_OPENAI_EMBEDDING_MODEL_ID="text-embedding-3-large"
     ENKI_BOT_OPENAI_MULTIMODAL_IMAGE_MODEL_ID="gpt-4o"
     ENKI_BOT_OPENAI_SEARCH_USER_LOCATION="{\"country\":\"US\"}"
