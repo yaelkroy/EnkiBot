@@ -168,7 +168,8 @@ class LLMServices:
                 max_output_tokens=max_output_tokens,
             )
             latency = time.perf_counter() - start
-            tokens = getattr(response, "usage", {}).get("total_tokens", 0)
+            usage = getattr(response, "usage", None)
+            tokens = getattr(usage, "total_tokens", 0)
             self._record_metrics("OpenAI", latency, tokens)
             return getattr(response, "output_text", None)
         except openai.APIError as e:
@@ -207,7 +208,8 @@ class LLMServices:
             start = time.perf_counter()
             response = await self.openai_async_client.embeddings.create(model=actual_model_id, input=texts)
             latency = time.perf_counter() - start
-            tokens = getattr(response, "usage", {}).get("total_tokens", 0)
+            usage = getattr(response, "usage", None)
+            tokens = getattr(usage, "total_tokens", 0)
             self._record_metrics("OpenAI", latency, tokens)
             if response.data:
                 return [item.embedding for item in response.data]
