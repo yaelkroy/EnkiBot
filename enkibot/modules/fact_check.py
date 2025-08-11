@@ -216,9 +216,8 @@ class OpenAIWebFetcher(Fetcher):
                 kwargs["extra_body"] = extra_body
             resp = await client.responses.create(
                 model=config.OPENAI_DEEP_RESEARCH_MODEL_ID,
-                tools=[{"type": "web_search_preview"}],
-                tool_choice={"type": "web_search_preview"},
-                reasoning={"effort": "medium"},
+                tools=[{"type": "web_search"}],
+                tool_choice={"type": "web_search"},
                 instructions="Return 3-6 sources as a JSON array with 'url' and 'title'.",
                 input=claim.text_norm,
                 **kwargs,
@@ -237,9 +236,8 @@ class OpenAIWebFetcher(Fetcher):
             try:
                 resp = await client.responses.create(
                     model=config.OPENAI_MODEL_ID,
-                    tools=[{"type": "web_search_preview"}],
-                    tool_choice={"type": "web_search_preview"},
-                    reasoning={"effort": "medium"},
+                    tools=[{"type": "web_search"}],
+                    tool_choice={"type": "web_search"},
                     instructions="Return 3-6 sources as a JSON array with 'url' and 'title'.",
                     input=claim.text_norm,
                     **kwargs,
