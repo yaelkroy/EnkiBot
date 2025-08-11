@@ -574,6 +574,8 @@ class FactChecker:
             try:
                 data = json.loads(completion)
                 label = data.get("label", label)
+                if isinstance(label, str):
+                    label = label.strip().lower()
                 confidence = float(data.get("confidence", 0.0))
                 summary = data.get("summary", summary)
             except Exception:
@@ -631,6 +633,8 @@ class FactChecker:
             try:
                 data = json.loads(completion)
                 label = data.get("label", label)
+                if isinstance(label, str):
+                    label = label.strip().lower()
                 confidence = float(data.get("confidence", 0.0))
                 summary = data.get("summary", summary)
             except Exception:
@@ -837,6 +841,7 @@ class FactCheckBot:
         logger.debug(
             "Run check: verdict label=%s confidence=%.2f", verdict.label, verdict.confidence
         )
+        label = verdict.label.strip().lower()
 
         target_msg = message or update.effective_message
         if self.db_manager and update.effective_chat and target_msg:
@@ -845,7 +850,7 @@ class FactCheckBot:
                     update.effective_chat.id,
                     target_msg.message_id,
                     getattr(claim, "text_orig", getattr(claim, "quote", "")),
-                    verdict.label,
+                    label,
                     verdict.confidence,
                     track,
                     "\n".join(verdict.debug) if verdict.debug else None,
@@ -854,7 +859,7 @@ class FactCheckBot:
                 logger.error(f"Failed to log fact check: {e}", exc_info=True)
 
         try:
-            if verdict.label in ("true", "mostly_true"):
+            if label in ("true", "mostly_true"):
                 await target_msg.set_reaction("👍")
             else:
                 await target_msg.set_reaction("👎")
@@ -862,7 +867,7 @@ class FactCheckBot:
                     verdict.summary, disable_web_page_preview=True
                 )
         except Exception:  # pragma: no cover - reaction support may vary
-            if verdict.label not in ("true", "mostly_true"):
+            if label not in ("true", "mostly_true"):
                 await target_msg.reply_text(
                     verdict.summary, disable_web_page_preview=True
                 )
