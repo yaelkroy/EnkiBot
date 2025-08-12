@@ -144,12 +144,16 @@ class EnkiBotApplication:
 
         async def _refresh_news_channels_job(_: ContextTypes.DEFAULT_TYPE) -> None:
             await self.db_manager.refresh_news_channels()
-
-        self.ptb_application.job_queue.run_repeating(
-            _refresh_news_channels_job,
-            interval=timedelta(days=30),
-            first=0,
-        )
+        if getattr(self.ptb_application, "job_queue", None):
+            self.ptb_application.job_queue.run_repeating(
+                _refresh_news_channels_job,
+                interval=timedelta(days=30),
+                first=0,
+            )
+        else:
+            logger.warning(
+                "JobQueue is not available. News channel refresh job will not run."
+            )
 
         logger.info("EnkiBotApplication initialized all services.")
 
