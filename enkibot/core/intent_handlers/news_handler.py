@@ -29,6 +29,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ChatAction
 from enkibot.utils.quota_middleware import enforce_user_quota
 from enkibot.utils.text_splitter import split_text_into_chunks
+from enkibot.utils.message_utils import clean_output_text
 
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
@@ -96,6 +97,7 @@ class NewsIntentHandler:
                         system_prompt=compiler_prompts["system"],
                         user_prompt_template=compiler_prompts["user_template"]
                     )
+                    compiled_response = clean_output_text(compiled_response)
                     for idx, chunk in enumerate(split_text_into_chunks(compiled_response)):
                         await update.message.reply_text(
                             chunk,
