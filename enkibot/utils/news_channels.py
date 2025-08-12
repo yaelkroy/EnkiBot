@@ -40,16 +40,26 @@ def extract_channel_usernames(html: str) -> List[str]:
 
     Returned usernames do not include the leading '@'.
     """
-    return sorted(set(_CHANNEL_PATTERN.findall(html)))
+    usernames = sorted(set(_CHANNEL_PATTERN.findall(html)))
+    logger.info("Extracted %d channel usernames from HTML", len(usernames))
+    return usernames
 
 
 async def fetch_channel_usernames() -> List[str]:
     """Fetch the TLGRM news channel directory and return usernames."""
+    logger.info("Requesting news channel directory from %s", NEWS_CHANNELS_URL)
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(NEWS_CHANNELS_URL)
+            logger.info(
+                "Received response %s with %d bytes",
+                resp.status_code,
+                len(resp.text),
+            )
             resp.raise_for_status()
-        return extract_channel_usernames(resp.text)
+        usernames = extract_channel_usernames(resp.text)
+        logger.info("Fetched %d total usernames", len(usernames))
+        return usernames
     except Exception as exc:  # pragma: no cover - network errors
         logger.error("Failed to fetch news channels: %s", exc)
         return []

@@ -740,12 +740,14 @@ class DatabaseManager:
             return
         try:
             with conn.cursor() as cursor:
+                logger.info("Clearing existing NewsChannels entries")
                 cursor.execute("DELETE FROM NewsChannels")
                 for name in usernames:
                     cursor.execute(
                         "INSERT INTO NewsChannels (Username, UpdatedAt) VALUES (?, GETDATE())",
                         name.lower(),
                     )
+            logger.info("Inserted %d news channels", len(usernames))
             conn.commit()
         except Exception as e:
             self._log_db_error(
@@ -769,9 +771,13 @@ class DatabaseManager:
         return {row.Username.lower() for row in rows} if rows else set()
 
     async def refresh_news_channels(self) -> None:
+        logger.info("Refreshing news channel list from remote source")
         names = await fetch_channel_usernames()
         if names:
+            logger.info("Updating database with %d channels", len(names))
             await self.replace_news_channels(names)
+        else:
+            logger.warning("No channel usernames fetched; database not updated")
 
     async def log_web_request(
         self,
