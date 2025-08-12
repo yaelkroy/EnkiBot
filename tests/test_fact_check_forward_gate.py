@@ -49,6 +49,16 @@ def test_forward_from_known_channel_triggers_news_check():
     assert kwargs.get("track") == "news"
 
 
+def test_forward_from_known_channel_with_at_sign_triggers_news_check():
+    bot = build_bot({"@known"})
+    update = make_update("known")
+    ctx = SimpleNamespace()
+    asyncio.run(bot.on_forward(update, ctx))
+    bot._run_check.assert_awaited_once()
+    args, kwargs = bot._run_check.await_args
+    assert kwargs.get("track") == "news"
+
+
 def test_forward_unknown_channel_news_gate_triggers_check(monkeypatch):
     bot = build_bot(set())
     bot.news_gate.predict = AsyncMock(return_value=0.8)
