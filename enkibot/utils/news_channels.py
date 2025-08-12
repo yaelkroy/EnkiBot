@@ -27,6 +27,14 @@ import httpx
 logger = logging.getLogger(__name__)
 
 NEWS_CHANNELS_URL = "https://tlgrm.ru/channels/news"
+# Additional category to scrape alongside the default news page.  The exact
+# category is not critical for tests as network calls are mocked, but in
+# production this points to a second TLGRM catalogue page.
+TECH_CHANNELS_URL = "https://tlgrm.ru/channels/technology"
+
+# List of TLGRM catalogue pages that should be scraped.  The fetch helper will
+# iterate over all URLs in this sequence.
+CHANNEL_CATEGORY_URLS = [NEWS_CHANNELS_URL, TECH_CHANNELS_URL]
 
 # Only pick channel usernames from links to tlgrm or tg://resolve to avoid
 # matching image resolution hints like ``@2x`` that appear in the page markup.
@@ -46,46 +54,58 @@ def extract_channel_usernames(html: str) -> List[str]:
 
 
 async def fetch_channel_usernames() -> List[str]:
-    """Fetch the TLGRM news channel directory and return usernames.
+    """Fetch TLGRM channel directories and return unique usernames.
 
-    The TLGRM catalogue uses endless scrolling and returns only the first
-    page of channels on the initial request.  Additional pages are accessible
-    via the ``?page=N`` query parameter.  This helper follows the pagination
-    links until all pages are retrieved so that callers receive the full list
-    of available news channels.
+    Each page listed in :data:`CHANNEL_CATEGORY_URLS` is retrieved.  The TLGRM
+    catalogue uses endless scrolling and returns only the first page of
+    channels on the initial request.  Additional pages are accessible via the
+    ``?page=N`` query parameter.  This helper follows the pagination links for
+    every configured page so that callers receive the full list of available
+    channels.
     """
 
-    logger.info("Requesting news channel directory from %s", NEWS_CHANNELS_URL)
+    logger.info(
+        "Requesting channel directories from %s", ", ".join(CHANNEL_CATEGORY_URLS)
+    )
     try:
         usernames: set[str] = set()
+        total_pages = 0
         async with httpx.AsyncClient(timeout=30.0) as client:
-            page = 1
-            last_page = None
-            while True:
-                url = NEWS_CHANNELS_URL if page == 1 else f"{NEWS_CHANNELS_URL}?page={page}"
-                resp = await client.get(url)
-                logger.info(
-                    "Received response %s with %d bytes for page %d",
-                    resp.status_code,
-                    len(resp.text),
-                    page,
-                )
-                resp.raise_for_status()
+            for base_url in CHANNEL_CATEGORY_URLS:
+                page = 1
+                last_page = None
+                while True:
+                    url = base_url if page == 1 else f"{base_url}?page={page}"
+                    resp = await client.get(url)
+                    logger.info(
+                        "Received response %s with %d bytes for %s page %d",
+                        resp.status_code,
+                        len(resp.text),
+                        base_url,
+                        page,
+                    )
+                    resp.raise_for_status()
 
-                usernames.update(extract_channel_usernames(resp.text))
+                    usernames.update(extract_channel_usernames(resp.text))
 
-                if last_page is None:
-                    match = re.search(r'data-last-page="(\d+)"', resp.text)
-                    last_page = int(match.group(1)) if match else 1
-                    logger.info("Detected %d pages in total", last_page)
+                    if last_page is None:
+                        match = re.search(r'data-last-page="(\d+)"', resp.text)
+                        last_page = int(match.group(1)) if match else 1
+                        logger.info("Detected %d pages in total for %s", last_page, base_url)
 
-                if page >= last_page:
-                    break
-                page += 1
+                    if page >= last_page:
+                        break
+                    page += 1
+                total_pages += page
 
         names = sorted(usernames)
-        logger.info("Fetched %d total usernames from %d pages", len(names), page)
+        logger.info(
+            "Fetched %d total usernames from %d pages across %d directories",
+            len(names),
+            total_pages,
+            len(CHANNEL_CATEGORY_URLS),
+        )
         return names
     except Exception as exc:  # pragma: no cover - network errors
-        logger.error("Failed to fetch news channels: %s", exc)
+        logger.error("Failed to fetch channel directories: %s", exc)
         return []
