@@ -22,7 +22,7 @@
 # - Expand unit tests to cover more edge cases.
 # -------------------------------------------------------------------------------
 import logging
-from datetime import timedelta
+from datetime import timedelta, time as dtime
 from telegram import Update
 from telegram.ext import Application, ContextTypes
 
@@ -152,10 +152,11 @@ class EnkiBotApplication:
             self.ptb_application.job_queue.run_once(
                 _refresh_news_channels_job, when=0
             )
-            self.ptb_application.job_queue.run_repeating(
+            # Run the refresh on the first day of each month at midnight.
+            self.ptb_application.job_queue.run_monthly(
                 _refresh_news_channels_job,
-                interval=timedelta(days=30),
-                first=timedelta(days=30),
+                time=dtime(hour=0, minute=0),
+                day=1,
             )
         else:
             logger.warning(
