@@ -18,7 +18,7 @@
 # -------------------------------------------------------------------------------
 # Future Improvements:
 # - Improve modularity to support additional features and services.
-# - Enhance error handling and logging for better maintenance.
+# - Enhance error handling and logging for better maintenance.'
 # - Expand unit tests to cover more edge cases.
 # -------------------------------------------------------------------------------
 # === EnkiBot Base Module ===

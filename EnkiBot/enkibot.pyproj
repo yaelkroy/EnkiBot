@@ -39,17 +39,31 @@
     <Compile Include="evolution\__init__.py" />
     <Compile Include="lang\__init__.py" />
     <Compile Include="main.py" />
+    <Compile Include="modules\admin_tools.py" />
     <Compile Include="modules\api_router.py" />
     <Compile Include="modules\base_module.py" />
+    <Compile Include="modules\community_moderation.py" />
+    <Compile Include="modules\fact_check.py" />
     <Compile Include="modules\fact_extractor.py" />
     <Compile Include="modules\image_generation_service.py" />
     <Compile Include="modules\intent_recognizer.py" />
     <Compile Include="modules\karma_manager.py" />
+    <Compile Include="modules\local_model_manager.py" />
+    <Compile Include="modules\model_router.py" />
+    <Compile Include="modules\primary_source_hunter.py" />
     <Compile Include="modules\profile_manager.py" />
+    <Compile Include="modules\rag_service.py" />
     <Compile Include="modules\response_generator.py" />
+    <Compile Include="modules\spam_detector.py" />
+    <Compile Include="modules\stats_manager.py" />
+    <Compile Include="modules\web_tool.py" />
     <Compile Include="modules\__init__.py" />
     <Compile Include="utils\database.py" />
     <Compile Include="utils\logging_config.py" />
+    <Compile Include="utils\message_utils.py" />
+    <Compile Include="utils\provider_metrics.py" />
+    <Compile Include="utils\quota_middleware.py" />
+    <Compile Include="utils\text_splitter.py" />
     <Compile Include="utils\__init__.py" />
     <Compile Include="__init__.py" />
   </ItemGroup>
@@ -66,6 +80,8 @@
     <Content Include="core\llm_services.py" />
     <Content Include="lang\ru.json" />
     <Content Include="lang\en.json" />
+    <Content Include="lang\uk.json" />
+    <Content Include="lang\x-ps.json" />
     <Content Include="LICENSE" />
     <Content Include="README.md" />
   </ItemGroup>
