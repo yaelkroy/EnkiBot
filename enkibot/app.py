@@ -155,7 +155,7 @@ class EnkiBotApplication:
             # Run the refresh on the first day of each month at midnight.
             self.ptb_application.job_queue.run_monthly(
                 _refresh_news_channels_job,
-                time=dtime(hour=0, minute=0),
+                when=dtime(hour=0, minute=0),
                 day=1,
             )
         else:
