@@ -821,6 +821,13 @@ class FactCheckBot:
 
     # Handlers --------------------------------------------------------------
     async def on_forward(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        forward_from = getattr(update.effective_message, "forward_from_chat", None)
+        # Only handle messages forwarded from channels. Forwards from users or
+        # anonymous sources are ignored, as the news/book gates are intended for
+        # channel content.
+        if not forward_from:
+            return
+
         text = get_text(update.effective_message) or ""
         if not text and (
             update.effective_message.photo
@@ -829,7 +836,7 @@ class FactCheckBot:
         ):
             # Text-first workflow: only invoke OCR if the forward lacks text
             text = await self._ocr_extract(update.effective_message)
-        forward_from = getattr(update.effective_message, "forward_from_chat", None)
+
         forward_username = (
             forward_from.username.lower()
             if forward_from and getattr(forward_from, "username", None)
