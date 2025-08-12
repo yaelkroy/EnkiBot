@@ -93,6 +93,7 @@ def clean_output_text(text: str) -> str:
     """Sanitize bot replies by removing tracking parameters and duplicate lines.
 
     - Strips ``utm_source=openai`` from any URLs in *text*.
+    - Removes ``?utm_source=openai`` fragments that appear outside of URLs.
     - Removes consecutive duplicate lines to avoid repeated content.
     """
     if not text:
@@ -102,6 +103,8 @@ def clean_output_text(text: str) -> str:
         return _strip_utm_source(match.group(0))
 
     cleaned = URL_PATTERN.sub(repl, text)
+    # Also drop tracking fragments left as plain text
+    cleaned = re.sub(r"[?&]utm_source=openai", "", cleaned)
 
     deduped_lines: list[str] = []
     prev_line: str | None = None
