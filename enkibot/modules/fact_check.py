@@ -821,41 +821,47 @@ class FactCheckBot:
 
     # Handlers --------------------------------------------------------------
     async def on_forward(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        forward_from = getattr(update.effective_message, "forward_from_chat", None)
+        message = update.effective_message
+        chat = getattr(update, "effective_chat", None)
+        user = getattr(update, "effective_user", None)
+        forward_from = getattr(message, "forward_from_chat", None)
         forward_name = getattr(forward_from, "username", None)
-        logger.debug(
-            "Forward handler: received forwarded message id=%s from_chat=%s",
-            getattr(update.effective_message, "message_id", None),
+
+        logger.info(
+            "Forward handler: chat=%s user=%s(%s) msg_id=%s forwarded_from=%s",
+            getattr(chat, "id", None),
+            getattr(user, "id", None),
+            getattr(user, "username", None),
+            getattr(message, "message_id", None),
             forward_name,
         )
+
         # Only handle messages forwarded from channels. Forwards from users or
         # anonymous sources are ignored, as the news/book gates are intended for
         # channel content.
         if not forward_from:
-            logger.debug("Forward handler: no forward_from_chat, ignoring message")
+            logger.info("Forward handler: no forward_from_chat, ignoring message")
             return
 
-        text = get_text(update.effective_message) or ""
+        text = get_text(message) or ""
         if not text and (
-            update.effective_message.photo
-            or update.effective_message.video
-            or update.effective_message.document
+            message.photo or message.video or message.document
         ):
             # Text-first workflow: only invoke OCR if the forward lacks text
-            text = await self._ocr_extract(update.effective_message)
-        logger.debug("Forward handler: extracted text length %d", len(text))
+            text = await self._ocr_extract(message)
+        logger.info("Forward handler: extracted text length %d", len(text))
 
         forward_username = (
             forward_from.username.lstrip("@").lower()
             if forward_from and getattr(forward_from, "username", None)
             else None
         )
-        logger.debug("Forward handler: normalized username=%s", forward_username)
+        logger.info("Forward handler: normalized username=%s", forward_username)
         if forward_username and self.db_manager:
             try:
                 raw_sources = await self.db_manager.get_news_channel_usernames()
                 known_sources = {name.lstrip("@").lower() for name in raw_sources}
-                logger.debug(
+                logger.info(
                     "Forward handler: loaded %d known news channels", len(known_sources)
                 )
             except Exception:
@@ -868,22 +874,22 @@ class FactCheckBot:
                 )
                 await self._run_check(update, ctx, text, track="news")
                 return
-            logger.debug(
+            logger.info(
                 "Forward handler: channel %s not in news channel list", forward_username
             )
         else:
-            logger.debug(
+            logger.info(
                 "Forward handler: skipping news channel check (username=%s, db_manager=%s)",
                 forward_username,
                 bool(self.db_manager),
             )
         cfg = self.cfg_reader(update.effective_chat.id)
-        logger.debug(
+        logger.info(
             "Forward handler: chat %s config %s", update.effective_chat.id, cfg
         )
         if cfg.get("satire", {}).get("enabled", True):
             dec = await self.satire.predict(update, text)
-            logger.debug("Forward handler: satire decision=%s", dec.decision)
+            logger.info("Forward handler: satire decision=%s", dec.decision)
             await self._log_satire(update, dec)
             if dec.decision == "satire":
                 kb = InlineKeyboardMarkup(
@@ -896,7 +902,7 @@ class FactCheckBot:
         if cfg.get("auto", {}).get("auto_check_news", True):
             p_news = await self.news_gate.predict(text)
             p_book = await self.quote_gate.predict(text)
-            logger.debug(
+            logger.info(
                 "Forward handler: gate scores p_news=%.2f p_book=%.2f", p_news, p_book
             )
             if self.db_manager and update.effective_chat:
@@ -922,7 +928,7 @@ class FactCheckBot:
                 await self._run_check(update, ctx, text, track="news")
                 return
             if p_book >= 0.55:
-                logger.debug("Forward handler: p_book %.2f >= 0.55 show hint", p_book)
+                logger.info("Forward handler: p_book %.2f >= 0.55 show hint", p_book)
                 hint = (
                     self.language_service.get_response_string("hint_check_quote", "Check quote?")
                     if self.language_service
@@ -931,7 +937,7 @@ class FactCheckBot:
                 await self._show_author_only_hint(update, ctx, hint, "book")
                 return
             if p_news >= 0.55:
-                logger.debug("Forward handler: p_news %.2f >= 0.55 show hint", p_news)
+                logger.info("Forward handler: p_news %.2f >= 0.55 show hint", p_news)
                 hint = (
                     self.language_service.get_response_string("hint_check_news", "Check as news?")
                     if self.language_service
