@@ -21,3 +21,9 @@ def test_clean_output_text_removes_utm_from_plain_text():
 
 def test_clean_output_text_returns_none_when_empty_after_cleaning():
     assert clean_output_text("?utm_source=openai") is None
+
+
+def test_clean_output_text_handles_markdown_links():
+    text = "([tass.ru](https://tass.ru/kultura/24749995?utm_source=openai))"
+    expected = "([tass.ru](https://tass.ru/kultura/24749995))"
+    assert clean_output_text(text) == expected
