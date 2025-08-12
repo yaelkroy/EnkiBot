@@ -17,3 +17,7 @@ def test_clean_output_text_removes_utm_from_url():
 def test_clean_output_text_removes_utm_from_plain_text():
     text = "something?utm_source=openai else"
     assert clean_output_text(text) == "something else"
+
+
+def test_clean_output_text_returns_none_when_empty_after_cleaning():
+    assert clean_output_text("?utm_source=openai") is None

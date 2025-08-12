@@ -98,6 +98,8 @@ class NewsIntentHandler:
                         user_prompt_template=compiler_prompts["user_template"]
                     )
                     compiled_response = clean_output_text(compiled_response)
+                    if not compiled_response:
+                        compiled_response = self.language_service.get_response_string("news_api_data_error")
                     for idx, chunk in enumerate(split_text_into_chunks(compiled_response)):
                         await update.message.reply_text(
                             chunk,

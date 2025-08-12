@@ -96,6 +96,10 @@ class GeneralIntentHandler:
                     ),
                 )
                 fact_check_result = clean_output_text(fact_check_result)
+                if not fact_check_result:
+                    fact_check_result = self.language_service.get_response_string(
+                        "analysis_unavailable", "Analysis unavailable."
+                    )
                 for chunk in split_text_into_chunks(fact_check_result):
                     await update.message.reply_text(chunk)
             else:
