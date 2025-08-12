@@ -201,6 +201,11 @@ class TelegramHandlerService:
             preferred_language=current_lang_for_log )
         await self.stats_manager.log_message(chat_id, user.id, message.text, user.username)
         logger.info(f"Message from user {user.id} logged. Profile action: {action_taken}.")
+        # Ensure chat activity is visible in the terminal even if logging is redirected
+        print(
+            f"CHAT[{chat_id}] {user.username or user.id}: {message.text}"
+            f" | profile action: {action_taken}"
+        )
         name_var_prompts = self.language_service.get_llm_prompt_set("name_variation_generator")
         if action_taken and action_taken.lower() == "insert" and name_var_prompts and "system" in name_var_prompts:
             asyncio.create_task(self.profile_manager.populate_name_variations_with_llm(
@@ -375,6 +380,10 @@ class TelegramHandlerService:
             await self.stats_manager.log_member_join(chat_id, member.id, member.username)
             if await self.db_manager.is_user_verified(member.id):
                 continue
+            # Print to console for visibility of join events
+            print(
+                f"JOIN[{chat_id}] {member.username or member.id} joined the chat"
+            )
             try:
                 await context.bot.restrict_chat_member(
                     chat_id,
@@ -408,6 +417,10 @@ class TelegramHandlerService:
         member = update.message.left_chat_member
         if member and not member.is_bot:
             await self.stats_manager.log_member_leave(chat_id, member.id)
+            # Print to console for visibility of leave events
+            print(
+                f"LEAVE[{chat_id}] {member.username or member.id} left the chat"
+            )
 
     async def captcha_button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -886,6 +899,10 @@ class TelegramHandlerService:
             master_intent = "IMAGE_GENERATION_QUERY"
 
         logger.info(f"Master Intent for '{user_msg_txt[:50]}...' (lang: {self.language_service.current_lang}) classified as: {master_intent}")
+        # Mirror key intent decisions to the console
+        print(
+            f"ACTION[{chat_id}] intent={master_intent} reason={reason}"
+        )
 
         next_state: Optional[int] = None
         if master_intent == "WEATHER_QUERY":
