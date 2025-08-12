@@ -745,7 +745,7 @@ class DatabaseManager:
                 for name in usernames:
                     cursor.execute(
                         "INSERT INTO NewsChannels (Username, UpdatedAt) VALUES (?, GETDATE())",
-                        name.lower(),
+                        name.strip().lstrip("@").lower(),
                     )
             logger.info("Inserted %d news channels", len(usernames))
             conn.commit()
@@ -768,7 +768,9 @@ class DatabaseManager:
             "SELECT Username FROM NewsChannels",
             fetch_all=True,
         )
-        return {row.Username.lower() for row in rows} if rows else set()
+        return (
+            {row.Username.strip().lstrip("@").lower() for row in rows} if rows else set()
+        )
 
     async def refresh_news_channels(self) -> None:
         logger.info("Refreshing news channel list from remote source")

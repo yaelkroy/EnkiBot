@@ -838,13 +838,14 @@ class FactCheckBot:
             text = await self._ocr_extract(update.effective_message)
 
         forward_username = (
-            forward_from.username.lower()
+            forward_from.username.lstrip("@").lower()
             if forward_from and getattr(forward_from, "username", None)
             else None
         )
         if forward_username and self.db_manager:
             try:
-                known_sources = await self.db_manager.get_news_channel_usernames()
+                raw_sources = await self.db_manager.get_news_channel_usernames()
+                known_sources = {name.lstrip("@").lower() for name in raw_sources}
             except Exception:
                 known_sources = set()
             if forward_username in known_sources:
