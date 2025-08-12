@@ -829,6 +829,20 @@ class FactCheckBot:
         ):
             # Text-first workflow: only invoke OCR if the forward lacks text
             text = await self._ocr_extract(update.effective_message)
+        forward_from = getattr(update.effective_message, "forward_from_chat", None)
+        forward_username = (
+            forward_from.username.lower()
+            if forward_from and getattr(forward_from, "username", None)
+            else None
+        )
+        if forward_username and self.db_manager:
+            try:
+                known_sources = await self.db_manager.get_news_channel_usernames()
+            except Exception:
+                known_sources = set()
+            if forward_username in known_sources:
+                await self._run_check(update, ctx, text, track="news")
+                return
         cfg = self.cfg_reader(update.effective_chat.id)
         if cfg.get("satire", {}).get("enabled", True):
             dec = await self.satire.predict(update, text)

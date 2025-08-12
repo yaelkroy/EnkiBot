@@ -22,8 +22,9 @@
 # - Expand unit tests to cover more edge cases.
 # -------------------------------------------------------------------------------
 import logging
+from datetime import timedelta
 from telegram import Update
-from telegram.ext import Application
+from telegram.ext import Application, ContextTypes
 
 from enkibot import config
 from enkibot.utils.database import DatabaseManager
@@ -140,6 +141,15 @@ class EnkiBotApplication:
             language_service=self.language_service,
         )
         self.fact_check_bot.register()
+
+        async def _refresh_news_channels_job(_: ContextTypes.DEFAULT_TYPE) -> None:
+            await self.db_manager.refresh_news_channels()
+
+        self.ptb_application.job_queue.run_repeating(
+            _refresh_news_channels_job,
+            interval=timedelta(days=30),
+            first=0,
+        )
 
         logger.info("EnkiBotApplication initialized all services.")
 

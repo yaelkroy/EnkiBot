@@ -38,6 +38,8 @@ from typing import List, Dict, Any, Optional
 from datetime import date
 from types import SimpleNamespace
 
+from .news_channels import fetch_channel_usernames
+
 try:  # pragma: no cover - optional dependency
     import pyodbc
 except Exception:  # pragma: no cover
@@ -727,6 +729,50 @@ class DatabaseManager:
             commit=True,
         )
 
+    async def replace_news_channels(self, usernames: List[str]) -> None:
+        if not self.connection_string:
+            logger.warning(
+                "News channel update skipped: Database not configured."
+            )
+            return
+        conn = self.get_db_connection()
+        if not conn:
+            return
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM NewsChannels")
+                for name in usernames:
+                    cursor.execute(
+                        "INSERT INTO NewsChannels (Username, UpdatedAt) VALUES (?, GETDATE())",
+                        name.lower(),
+                    )
+            conn.commit()
+        except Exception as e:
+            self._log_db_error(
+                "replace_news_channels",
+                "bulk update NewsChannels",
+                None,
+                e,
+            )
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        finally:
+            conn.close()
+
+    async def get_news_channel_usernames(self) -> set[str]:
+        rows = await self.execute_query(
+            "SELECT Username FROM NewsChannels",
+            fetch_all=True,
+        )
+        return {row.Username.lower() for row in rows} if rows else set()
+
+    async def refresh_news_channels(self) -> None:
+        names = await fetch_channel_usernames()
+        if names:
+            await self.replace_news_channels(names)
+
     async def log_web_request(
         self,
         url: str,
@@ -897,6 +943,7 @@ def initialize_database():  # This function defines and uses DatabaseManager loc
         "IX_ChatUserStats_ChatID_MessageCount": "CREATE INDEX IX_ChatUserStats_ChatID_MessageCount ON ChatUserStats (ChatID, MessageCount DESC);",
         "ChatLinkStats": "CREATE TABLE ChatLinkStats (ChatID BIGINT NOT NULL, Domain NVARCHAR(255) NOT NULL, LinkCount INT NOT NULL DEFAULT 0, PRIMARY KEY (ChatID, Domain));",
         "IX_ChatLinkStats_ChatID_Count": "CREATE INDEX IX_ChatLinkStats_ChatID_Count ON ChatLinkStats (ChatID, LinkCount DESC);",
+        "NewsChannels": "CREATE TABLE NewsChannels (Username NVARCHAR(255) PRIMARY KEY, UpdatedAt DATETIME2 DEFAULT GETDATE() NOT NULL);",
         "ErrorLog": "CREATE TABLE ErrorLog (ErrorID INT IDENTITY(1,1) PRIMARY KEY, Timestamp DATETIME2 DEFAULT GETDATE() NOT NULL, LogLevel NVARCHAR(50) NOT NULL, LoggerName NVARCHAR(255) NULL, ModuleName NVARCHAR(255) NULL, FunctionName NVARCHAR(255) NULL, LineNumber INT NULL, ErrorMessage NVARCHAR(MAX) NOT NULL, ExceptionInfo NVARCHAR(MAX) NULL);",
         "IX_ErrorLog_Timestamp": "CREATE INDEX IX_ErrorLog_Timestamp ON ErrorLog (Timestamp DESC);",
         "WebRequestLog": (
