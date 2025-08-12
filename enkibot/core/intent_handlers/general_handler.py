@@ -148,6 +148,7 @@ class GeneralIntentHandler:
         )
         
         if reply:
+            reply = clean_output_text(reply) or reply
             keyboard = InlineKeyboardMarkup(
                 [[
                     InlineKeyboardButton("\U0001F504 Regenerate", callback_data="refine:regenerate"),

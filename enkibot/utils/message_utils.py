@@ -102,7 +102,12 @@ def clean_output_text(text: str | None) -> str | None:
         return None
 
     def repl(match: re.Match[str]) -> str:
-        return _strip_utm_source(match.group(0))
+        url = match.group(0)
+        trailing = ""
+        while url and url[-1] in ").,]":
+            trailing = url[-1] + trailing
+            url = url[:-1]
+        return _strip_utm_source(url) + trailing
 
     cleaned = URL_PATTERN.sub(repl, text)
     # Also drop tracking fragments left as plain text
