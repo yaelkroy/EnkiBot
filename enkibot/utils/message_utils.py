@@ -27,6 +27,8 @@
 from __future__ import annotations
 
 from typing import Any
+import re
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 
 def is_forwarded_message(message: Any) -> bool:
@@ -74,3 +76,38 @@ def get_text(message: Any) -> str | None:
     text = getattr(message, "text", None)
     caption = getattr(message, "caption", None)
     return text or caption
+
+
+URL_PATTERN = re.compile(r"https?://\S+")
+
+
+def _strip_utm_source(url: str) -> str:
+    """Remove ``utm_source=openai`` query parameters from a single *url*."""
+    parts = urlsplit(url)
+    query_params = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if not (k == "utm_source" and v == "openai")]
+    new_query = urlencode(query_params)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+
+
+def clean_output_text(text: str) -> str:
+    """Sanitize bot replies by removing tracking parameters and duplicate lines.
+
+    - Strips ``utm_source=openai`` from any URLs in *text*.
+    - Removes consecutive duplicate lines to avoid repeated content.
+    """
+    if not text:
+        return text
+
+    def repl(match: re.Match[str]) -> str:
+        return _strip_utm_source(match.group(0))
+
+    cleaned = URL_PATTERN.sub(repl, text)
+
+    deduped_lines: list[str] = []
+    prev_line: str | None = None
+    for line in cleaned.splitlines():
+        if line != prev_line:
+            deduped_lines.append(line)
+        prev_line = line
+
+    return "\n".join(deduped_lines)

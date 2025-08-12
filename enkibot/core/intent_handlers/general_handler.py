@@ -30,7 +30,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 
-from enkibot.utils.message_utils import is_forwarded_message
+from enkibot.utils.message_utils import is_forwarded_message, clean_output_text
 from enkibot.utils.quota_middleware import enforce_user_quota
 from enkibot.utils.text_splitter import split_text_into_chunks
 
@@ -95,6 +95,7 @@ class GeneralIntentHandler:
                         "analysis_unavailable", "Analysis unavailable."
                     ),
                 )
+                fact_check_result = clean_output_text(fact_check_result)
                 for chunk in split_text_into_chunks(fact_check_result):
                     await update.message.reply_text(chunk)
             else:
