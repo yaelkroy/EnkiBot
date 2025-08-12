@@ -46,20 +46,46 @@ def extract_channel_usernames(html: str) -> List[str]:
 
 
 async def fetch_channel_usernames() -> List[str]:
-    """Fetch the TLGRM news channel directory and return usernames."""
+    """Fetch the TLGRM news channel directory and return usernames.
+
+    The TLGRM catalogue uses endless scrolling and returns only the first
+    page of channels on the initial request.  Additional pages are accessible
+    via the ``?page=N`` query parameter.  This helper follows the pagination
+    links until all pages are retrieved so that callers receive the full list
+    of available news channels.
+    """
+
     logger.info("Requesting news channel directory from %s", NEWS_CHANNELS_URL)
     try:
+        usernames: set[str] = set()
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(NEWS_CHANNELS_URL)
-            logger.info(
-                "Received response %s with %d bytes",
-                resp.status_code,
-                len(resp.text),
-            )
-            resp.raise_for_status()
-        usernames = extract_channel_usernames(resp.text)
-        logger.info("Fetched %d total usernames", len(usernames))
-        return usernames
+            page = 1
+            last_page = None
+            while True:
+                url = NEWS_CHANNELS_URL if page == 1 else f"{NEWS_CHANNELS_URL}?page={page}"
+                resp = await client.get(url)
+                logger.info(
+                    "Received response %s with %d bytes for page %d",
+                    resp.status_code,
+                    len(resp.text),
+                    page,
+                )
+                resp.raise_for_status()
+
+                usernames.update(extract_channel_usernames(resp.text))
+
+                if last_page is None:
+                    match = re.search(r'data-last-page="(\d+)"', resp.text)
+                    last_page = int(match.group(1)) if match else 1
+                    logger.info("Detected %d pages in total", last_page)
+
+                if page >= last_page:
+                    break
+                page += 1
+
+        names = sorted(usernames)
+        logger.info("Fetched %d total usernames from %d pages", len(names), page)
+        return names
     except Exception as exc:  # pragma: no cover - network errors
         logger.error("Failed to fetch news channels: %s", exc)
         return []
