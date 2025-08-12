@@ -223,19 +223,37 @@ class TelegramHandlerService:
             else: logger.warning(f"Profile prompts missing for lang '{current_lang_for_log}'. Skipping profile analysis for user {user.id}.")
 
     async def _is_triggered(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_msg_txt_lower: str) -> bool:
-        if not update.message or not context.bot: return False
+        if not update.message or not context.bot:
+            return False
+
         current_chat_id = update.effective_chat.id
-        is_group = update.message.chat.type in ['group', 'supergroup']
-        if not is_group: return True
-        if self.allowed_group_ids and current_chat_id not in self.allowed_group_ids: return False
-        bot_username_lower = getattr(context.bot, 'username', "").lower() if getattr(context.bot, 'username', None) else ""
+        is_group = update.message.chat.type in ["group", "supergroup"]
+        if not is_group:
+            return True
+
+        if self.allowed_group_ids and current_chat_id not in self.allowed_group_ids:
+            return False
+
+        if is_forwarded_message(update.message):
+            logger.info(f"_is_triggered: True (Forwarded message in chat {current_chat_id})")
+            return True
+
+        bot_username_lower = getattr(context.bot, "username", "").lower() if getattr(context.bot, "username", None) else ""
         is_at_mentioned = bool(bot_username_lower and f"@{bot_username_lower}" in user_msg_txt_lower)
-        tokens = re.findall(r'\w+', user_msg_txt_lower, flags=re.UNICODE)
+        tokens = re.findall(r"\w+", user_msg_txt_lower, flags=re.UNICODE)
         is_nickname_mentioned = any(nick.lower() in tokens for nick in self.bot_nicknames)
         is_bot_mentioned = is_at_mentioned or is_nickname_mentioned
-        is_reply_to_bot = (update.message.reply_to_message and update.message.reply_to_message.from_user and context.bot and update.message.reply_to_message.from_user.id == context.bot.id)
+        is_reply_to_bot = (
+            update.message.reply_to_message
+            and update.message.reply_to_message.from_user
+            and context.bot
+            and update.message.reply_to_message.from_user.id == context.bot.id
+        )
         final_trigger_decision = is_bot_mentioned or is_reply_to_bot
-        if is_group and final_trigger_decision: logger.info(f"_is_triggered: True (Group: {current_chat_id}): @M={is_at_mentioned}, NickM={is_nickname_mentioned}, Reply={is_reply_to_bot}")
+        if is_group and final_trigger_decision:
+            logger.info(
+                f"_is_triggered: True (Group: {current_chat_id}): @M={is_at_mentioned}, NickM={is_nickname_mentioned}, Reply={is_reply_to_bot}"
+            )
         return final_trigger_decision
 
     async def _is_user_admin(self, chat_id: int, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -853,7 +871,7 @@ class TelegramHandlerService:
             if not triggered:
                 triggered = await self._is_triggered(update, context, text.lower())
                 if triggered:
-                    reason = "mention"
+                    reason = "forward" if is_forwarded_message(update.message) else "mention"
                     user_msg_txt = text.strip()
 
         if not triggered:
