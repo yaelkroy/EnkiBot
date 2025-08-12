@@ -1,4 +1,4 @@
-python-telegram-bot>=20.0
+python-telegram-bot[job-queue]>=20.0
 openai>=1.0
 pyodbc
 httpx>=0.20

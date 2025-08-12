@@ -27,7 +27,12 @@ import httpx
 logger = logging.getLogger(__name__)
 
 NEWS_CHANNELS_URL = "https://tlgrm.ru/channels/news"
-_CHANNEL_PATTERN = re.compile(r"@([A-Za-z0-9_]+)")
+
+# Only pick channel usernames from links to tlgrm or tg://resolve to avoid
+# matching image resolution hints like ``@2x`` that appear in the page markup.
+_CHANNEL_PATTERN = re.compile(
+    r'href=["\'](?:https://tlgrm\.ru/channels/@|tg://resolve\?domain=)([A-Za-z0-9_]+)["\']'
+)
 
 
 def extract_channel_usernames(html: str) -> List[str]:
