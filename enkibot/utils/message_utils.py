@@ -89,15 +89,17 @@ def _strip_utm_source(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
 
 
-def clean_output_text(text: str) -> str:
+def clean_output_text(text: str | None) -> str | None:
     """Sanitize bot replies by removing tracking parameters and duplicate lines.
 
     - Strips ``utm_source=openai`` from any URLs in *text*.
     - Removes ``?utm_source=openai`` fragments that appear outside of URLs.
     - Removes consecutive duplicate lines to avoid repeated content.
+
+    Returns ``None`` if the cleaned text would be empty.
     """
     if not text:
-        return text
+        return None
 
     def repl(match: re.Match[str]) -> str:
         return _strip_utm_source(match.group(0))
@@ -113,4 +115,5 @@ def clean_output_text(text: str) -> str:
             deduped_lines.append(line)
         prev_line = line
 
-    return "\n".join(deduped_lines)
+    cleaned_joined = "\n".join(deduped_lines).strip()
+    return cleaned_joined or None
