@@ -267,6 +267,39 @@ def normalize_text(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def sanitize_for_search(s: str) -> str:
+    """Make a query safer for web/APIs by removing exotic punctuation and control chars.
+
+    - Normalize unicode quotes/dashes to ASCII or remove them
+    - Strip leading/trailing paired quotes
+    - Remove characters outside a conservative allowlist
+    - Collapse whitespace
+    """
+    if not s:
+        return s
+    # Normalize common typography to ASCII
+    s = (
+        s.replace("«", '"').replace("»", '"')
+         .replace("“", '"').replace("”", '"')
+         .replace("‘", "'").replace("’", "'")
+         .replace("—", "-").replace("–", "-").replace("‒", "-")
+    )
+    # Remove control characters
+    s = re.sub(r"[\u0000-\u001F\u007F]", " ", s)
+    s = s.strip()
+    # Strip paired quotes around entire string
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        s = s[1:-1].strip()
+    # Allow only letters/digits/underscore and a small set of punctuation
+    s = re.sub(r"[^\w\s\.,:;!\?()\-/%+]", " ", s, flags=re.UNICODE)
+    # Collapse multiple quotes or dashes
+    s = re.sub(r'\"{2,}', '"', s)
+    s = re.sub(r"-{2,}", "-", s)
+    # Collapse whitespace
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
 def hash_claim(text: str, urls: List[str]) -> str:
     canon = normalize_text(text).lower() + "\n" + "|".join(sorted(set(urls)))
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
@@ -393,24 +426,31 @@ class FactChecker:
             return None
         urls = URL_RE.findall(text)
         text_norm = normalize_text(text)
+        # Prepare a sanitized version for safe web search queries
+        text_sanitized = sanitize_for_search(text_norm)
         lang = None
         if detect:
             try:
-                lang = detect(text_norm)
+                lang = detect(text_sanitized or text_norm)
             except LangDetectException:
                 lang = None
-        return Claim(text_norm=text_norm, text_orig=text, lang=lang, urls=urls, hash=hash_claim(text_norm, urls))
+        # Prefer sanitized for search, keep original for display
+        return Claim(text_norm=text_sanitized or text_norm, text_orig=text, lang=lang, urls=urls, hash=hash_claim(text_sanitized or text_norm, urls))
 
     async def extract_quote(self, text: str) -> Optional[Quote]:
         m = re.search(r"[\"«](.+?)[\"»](?:\s*[\u2014\-]\s*([^\n]+))?", text, re.S)
         if not m:
             return None
-        quote = normalize_text(m.group(1))
-        if " " not in quote:
+        quote_raw = m.group(1)
+        quote = normalize_text(quote_raw)
+        # Sanitize quote content for robust lookup
+        quote_sanitized = sanitize_for_search(quote)
+        if " " not in quote_sanitized:
             return None
         author = title = None
         if m.group(2):
-            parts = [p.strip() for p in re.split(r",|\u2014|-", m.group(2), maxsplit=1) if p.strip()]
+            tail = sanitize_for_search(m.group(2))
+            parts = [p.strip() for p in re.split(r",|\u2014|-", tail, maxsplit=1) if p.strip()]
             if parts:
                 author = parts[0]
                 if len(parts) > 1:
@@ -418,10 +458,10 @@ class FactChecker:
         lang = None
         if detect:
             try:
-                lang = detect(quote)
+                lang = detect(quote_sanitized or quote)
             except LangDetectException:
                 lang = None
-        return Quote(quote=quote, author=author, title=title, lang=lang, hash=hashlib.sha256(quote.lower().encode("utf-8")).hexdigest())
+        return Quote(quote=quote_sanitized, author=author, title=title, lang=lang, hash=hashlib.sha256((quote_sanitized or quote).lower().encode("utf-8")).hexdigest())
 
     async def _llm_verdict(self, claim: Claim, debug: List[str], sources: Optional[List[Evidence]] = None) -> Verdict:
         if not self.llm_services:
@@ -468,7 +508,7 @@ class FactChecker:
             summary = summary.strip("` ")
             # Remove a leading json token if present
             if summary.lower().startswith("json"):
-                summary = summary[4:].lstrip()
+                summary = summary[4].lstrip()
         return Verdict(label="false", confidence=0.7, summary=summary, sources=sources)
 
     async def _llm_quote_verdict(self, quote: Quote, debug: List[str]) -> Verdict:
@@ -575,7 +615,7 @@ class FactCheckBot:
         app: Application,
         fc: FactChecker,
         satire_detector: Optional[SatireDetector] = None,
-        news_gate: Optional[NewsGate] = None,
+        news_gate: Optional[QuoteGate] = None,
         quote_gate: Optional[QuoteGate] = None,
         cfg_reader: Callable[[int], Dict[str, object]] | None = None,
         db_manager: Optional[DatabaseManager] = None,
@@ -768,13 +808,21 @@ class FactCheckBot:
         _, reasons = self.news_gate.debug_predict(content_text)
         print(f"GATE p_news={p_news:.2f} p_book={p_book:.2f} reasons={'|'.join(reasons) if reasons else 'none'}")
 
-        if p_book >= 0.70:
-            print(f"DECISION track=book action=trigger threshold=0.70 score={p_book:.2f}")
+        news_thr = 0.70
+        # If both gates are strong, prefer news
+        if p_news >= news_thr and p_book >= news_thr:
+            print(f"DECISION track=news action=trigger threshold={news_thr:.2f} score_news={p_news:.2f} tie_with_book={p_book:.2f}")
+            await self._run_check(update, ctx, content_text, track="news")
+            await self._log_forward_to_db(chat, user, message, text_for_logging)
+            return
+
+        if p_book >= news_thr:
+            print(f"DECISION track=book action=trigger threshold={news_thr:.2f} score={p_book:.2f}")
             await self._run_check(update, ctx, content_text, track="book")
             await self._log_forward_to_db(chat, user, message, text_for_logging)
             return
-        if p_news >= 0.70:
-            print(f"DECISION track=news action=trigger threshold=0.70 score={p_news:.2f}")
+        if p_news >= news_thr:
+            print(f"DECISION track=news action=trigger threshold={news_thr:.2f} score={p_news:.2f}")
             await self._run_check(update, ctx, content_text, track="news")
             await self._log_forward_to_db(chat, user, message, text_for_logging)
             return

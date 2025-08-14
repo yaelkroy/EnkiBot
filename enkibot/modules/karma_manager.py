@@ -181,20 +181,37 @@ class KarmaManager:
         except Exception as e:
             logger.error(f"Failed to record reaction event: {e}", exc_info=True)
 
-    async def get_user_stats(self, user_id: int) -> Optional[Dict[str, float]]:
-        """Returns aggregated current rep for the user across all chats."""
-        row = await self.db.execute_query(
+    async def get_user_stats(self, chat_id: int, user_id: int) -> Optional[Dict[str, float]]:
+        """Returns aggregated current rep for the user in a given chat and total across chats."""
+        # Per-chat score
+        row_chat = await self.db.execute_query(
+            "SELECT rep FROM user_rep_current WHERE chat_id = ? AND user_id = ?",
+            (chat_id, user_id),
+            fetch_one=True,
+        )
+        chat_rep = float(getattr(row_chat, "rep", 0.0) or 0.0) if row_chat else 0.0
+        # Global
+        row_global = await self.db.execute_query(
             "SELECT SUM(rep) AS total FROM user_rep_current WHERE user_id = ?",
             (user_id,),
             fetch_one=True,
         )
-        total = float(getattr(row, "total", 0.0)) if row else 0.0
-        return {"received": total}
+        total = float(getattr(row_global, "total", 0.0) or 0.0) if row_global else 0.0
+        return {"received": total, "received_chat": chat_rep}
 
     async def get_top_users(self, chat_id: int, limit: int = 10) -> List[Dict[str, float]]:
+        # Some drivers do not allow parameterizing TOP, so inline the validated integer
+        top_n = int(max(1, limit) * 5)
+        query = (
+            f"SELECT TOP {top_n} urc.user_id, urc.rep, urc.last_seen, up.Username, up.FirstName "
+            f"FROM user_rep_current urc WITH (NOLOCK) "
+            f"LEFT JOIN UserProfiles up WITH (NOLOCK) ON up.UserID = urc.user_id "
+            f"WHERE urc.chat_id = ? "
+            f"ORDER BY urc.rep DESC"
+        )
         rows = await self.db.execute_query(
-            "SELECT TOP (?) user_id, rep, last_seen FROM user_rep_current WHERE chat_id = ? ORDER BY rep DESC",
-            (limit * 5, chat_id),
+            query,
+            (chat_id,),
             fetch_all=True,
         )
         if not rows:
@@ -203,7 +220,7 @@ class KarmaManager:
         from datetime import datetime, timezone
         lam = self._lambda_from_halflife(self.user_halflife_days)
         now = datetime.now(timezone.utc)
-        tmp: List[Tuple[int, float]] = []
+        tmp: List[Tuple[int, float, str]] = []
         for r in rows:
             rep = float(getattr(r, "rep", 0.0) or 0.0)
             last_seen = getattr(r, "last_seen", None)
@@ -213,7 +230,10 @@ class KarmaManager:
                 dt_days = max(0.0, (now - last_seen).total_seconds() / 86400.0)
                 decayed = rep * math.exp(-lam * dt_days)
             uid = int(getattr(r, "user_id", 0))
-            tmp.append((uid, decayed))
+            uname = getattr(r, "Username", None)
+            fname = getattr(r, "FirstName", None)
+            display = (f"@{uname}" if uname else (fname or str(uid)))
+            tmp.append((uid, decayed, display))
         tmp.sort(key=lambda x: x[1], reverse=True)
         top = tmp[:limit]
-        return [{"user_id": uid, "name": str(uid), "score": round(score, 2)} for uid, score in top]
+        return [{"user_id": uid, "name": name, "score": round(score, 2)} for uid, score, name in top]
