@@ -800,7 +800,7 @@ class FactCheckBot:
     def register(self) -> None:
         self.app.add_handler(CommandHandler("factcheck", self.cmd_factcheck))
         self.app.add_handler(
-            MessageHandler(filters.FORWARDED & TEXT_OR_CAPTION, self.on_forward)
+            MessageHandler(filters.FORWARDED & TEXT_OR_CAPTION, self.on_forward), group=-1
         )
         # Safety net for older PTB versions where Caption filter may not fire
         try:
@@ -814,7 +814,7 @@ class FactCheckBot:
             MessageHandler(
                 filters.FORWARDED & (filters.PHOTO | filters.VIDEO | document_filter),
                 self.on_forward,
-            )
+            ), group=-1
         )
         self.app.add_handler(CallbackQueryHandler(self.on_factconfig_cb, pattern=r"^FC:"))
         self.app.add_handler(CommandHandler("factconfig", self.cmd_factconfig))
