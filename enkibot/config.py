@@ -179,3 +179,16 @@ FACTCHECK_CONFIRMATION_THRESHOLD = int(os.getenv('ENKI_BOT_FACTCHECK_CONFIRM_THR
 FACTCHECK_DOMAIN_BLOCKLIST = set(
     d.strip().lower() for d in os.getenv('ENKI_BOT_FACTCHECK_DOMAIN_BLOCKLIST', 't.me,telegram.me').split(',') if d.strip()
 )
+
+# --- Karma System Configuration ---
+# Weighted actions
+KARMA_PLUS_COMMAND = float(os.getenv('ENKI_BOT_KARMA_PLUS_COMMAND', '1.0'))
+KARMA_PLUS_REACTION = float(os.getenv('ENKI_BOT_KARMA_PLUS_REACTION', '0.5'))
+KARMA_MINUS_COMMAND = float(os.getenv('ENKI_BOT_KARMA_MINUS_COMMAND', '1.0'))
+KARMA_MINUS_REACTION = float(os.getenv('ENKI_BOT_KARMA_MINUS_REACTION', '0.5'))
+# Cooldown and decay
+KARMA_COOLDOWN_SECONDS = int(os.getenv('ENKI_BOT_KARMA_COOLDOWN_SECONDS', '60'))
+KARMA_DECAY_USER_HALFLIFE_DAYS = int(os.getenv('ENKI_BOT_KARMA_DECAY_USER_HALFLIFE_DAYS', '30'))
+# Emoji mapping (comma-separated)
+KARMA_POS_EMOJIS = [e.strip() for e in os.getenv('ENKI_BOT_KARMA_POS_EMOJIS', '👍,❤️,👏,🔥').split(',') if e.strip()]
+KARMA_NEG_EMOJIS = [e.strip() for e in os.getenv('ENKI_BOT_KARMA_NEG_EMOJIS', '👎,💩').split(',') if e.strip()]
