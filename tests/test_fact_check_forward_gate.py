@@ -97,8 +97,13 @@ def test_forward_without_channel_ignored():
     bot._run_check.assert_not_called()
 
 
-def test_forward_logs_message():
+def test_forward_logs_message_after_check():
     bot = build_bot({"known"})
+
+    async def ensure_not_logged(*args, **kwargs):
+        assert bot.db_manager.log_chat_message_and_upsert_user.await_count == 0
+
+    bot._run_check = AsyncMock(side_effect=ensure_not_logged)
     update = make_update("known")
     ctx = SimpleNamespace()
     asyncio.run(bot.on_forward(update, ctx))
