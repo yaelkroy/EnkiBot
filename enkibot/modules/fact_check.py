@@ -728,7 +728,7 @@ class FactCheckBot:
         except Exception:
             pass
 
-        label = (verdict.label or "").trim().lower()
+        label = (verdict.label or "").strip().lower()
         target_msg = message or update.effective_message
 
         # Persist

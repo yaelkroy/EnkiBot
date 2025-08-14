@@ -171,6 +171,8 @@ class KarmaManager:
             (chat_id, user_id, float(delta)),
             commit=True,
         )
+        # Diagnostics
+        print(f"KARMA-UPsert chat={chat_id} user={user_id} delta={delta}")
 
     async def _insert_event(
         self,
@@ -253,16 +255,22 @@ class KarmaManager:
         emoji: str,
     ) -> None:
         if target_user_id == rater_user_id:
+            print(f"KARMA-REACTION skip=self chat={chat_id} msg={msg_id} user={rater_user_id} emoji={emoji}")
             return
         if self._is_on_cooldown(chat_id, rater_user_id, target_user_id):
+            print(f"KARMA-REACTION skip=cooldown chat={chat_id} msg={msg_id} target={target_user_id} rater={rater_user_id} emoji={emoji}")
             return
         if emoji in self._pos_emojis:
             base = self.weights.plus_reaction
+            reason = "pos"
         elif emoji in self._neg_emojis:
             base = self.weights.minus_reaction
+            reason = "neg"
         else:
+            print(f"KARMA-REACTION skip=unsupported-emoji chat={chat_id} msg={msg_id} target={target_user_id} rater={rater_user_id} emoji={emoji}")
             return  # unsupported emoji
         try:
+            print(f"KARMA-REACTION insert chat={chat_id} msg={msg_id} target={target_user_id} rater={rater_user_id} emoji={emoji} base={base} reason={reason}")
             await self._insert_event(
                 chat_id=chat_id,
                 msg_id=msg_id,
@@ -273,6 +281,7 @@ class KarmaManager:
             )
         except Exception as e:
             logger.error(f"Failed to record reaction event: {e}", exc_info=True)
+            print(f"KARMA-REACTION error={e}")
 
     async def get_user_stats(self, user_id: int) -> Optional[Dict[str, float]]:
         """Returns aggregated current rep for the user across all chats (for simple notifications)."""
