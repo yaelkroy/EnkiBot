@@ -1,4 +1,3 @@
-
 # enkibot/core/intent_handlers/general_handler.py
 # EnkiBot: Advanced Multilingual Telegram AI Assistant
 # Copyright (C) 2025 Yael Demedetskaya <yaelkroy@gmail.com>
@@ -37,20 +36,20 @@ from enkibot.utils.text_splitter import split_text_into_chunks
 if TYPE_CHECKING:
     from enkibot.core.language_service import LanguageService
     from enkibot.modules.response_generator import ResponseGenerator
-    # from enkibot.utils.database import DatabaseManager # If direct DB access is needed later
+    from enkibot.modules.fact_check import FactCheckBot
 
 logger = logging.getLogger(__name__)
 
 class GeneralIntentHandler:
     def __init__(self, 
                  language_service: 'LanguageService', 
-                 response_generator: 'ResponseGenerator'
-                 # db_manager: Optional['DatabaseManager'] = None # Add if needed
+                 response_generator: 'ResponseGenerator',
+                 fact_check_bot: 'FactCheckBot' # Add fact_check_bot here
                  ):
         logger.info("GeneralIntentHandler __init__ STARTING")
         self.language_service = language_service
         self.response_generator = response_generator
-        # self.db_manager = db_manager
+        self.fact_check_bot = fact_check_bot
         logger.info("GeneralIntentHandler __init__ COMPLETED")
 
     async def handle_request(self, 
@@ -73,38 +72,12 @@ class GeneralIntentHandler:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
         if is_forwarded_message(update.message):
-            analyzer_prompts = self.language_service.get_llm_prompt_set("forwarded_news_fact_checker")
-            if analyzer_prompts and "system" in analyzer_prompts:
-                forwarded_text = update.message.text or update.message.caption or ""
-                # Detect the language of the forwarded text so the research happens in that language
-                await self.language_service.determine_language_context(
-                    forwarded_text, update.effective_chat.id
-                )
-
-                question = user_msg_txt
-                if question == forwarded_text or len(question.strip()) < 5:
-                    question = self.language_service.get_response_string(
-                        "replied_message_default_question"
-                    )
-                fact_check_result = await self.response_generator.fact_check_forwarded_message(
-                    forwarded_text=forwarded_text,
-                    user_question=question,
-                    system_prompt=analyzer_prompts["system"],
-                    user_prompt_template=analyzer_prompts.get("user_template"),
-                    fallback_text=self.language_service.get_response_string(
-                        "analysis_unavailable", "Analysis unavailable."
-                    ),
-                )
-                fact_check_result = clean_output_text(fact_check_result)
-                if not fact_check_result:
-                    fact_check_result = self.language_service.get_response_string(
-                        "analysis_unavailable", "Analysis unavailable."
-                    )
-                for chunk in split_text_into_chunks(fact_check_result):
-                    await update.message.reply_text(chunk)
-            else:
-                logger.error("Prompt set for forwarded news fact-check is missing or malformed.")
-                await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
+            forwarded_text = update.message.text or update.message.caption or ""
+            
+            # Use the fact_check_bot's new method to run a check directly
+            await self.fact_check_bot.run_direct_check(update, context, forwarded_text)
+            
+            # The general handler should not proceed with its own logic for forwarded messages
             return
 
         main_orchestrator_prompts = self.language_service.get_llm_prompt_set("main_orchestrator")
@@ -148,7 +121,6 @@ class GeneralIntentHandler:
         )
         
         if reply:
-
             reply = clean_output_text(reply) or reply
 
             keyboard = InlineKeyboardMarkup(

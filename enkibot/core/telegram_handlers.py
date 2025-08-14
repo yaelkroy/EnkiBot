@@ -1,3 +1,4 @@
+# enkibot/core/telegram_handlers.py
 # -------------------------------------------------------------------------------
 # Future Improvements:
 # - Improve modularity to support additional features and services.
@@ -112,7 +113,8 @@ class TelegramHandlerService:
                  karma_manager: 'KarmaManager',
                  community_moderation: 'CommunityModerationService',
                  allowed_group_ids: set,
-                 bot_nicknames: list
+                 bot_nicknames: list,
+                 general_handler: 'GeneralIntentHandler' # Add new handler instance here
                 ):
         logger.info("TelegramHandlerService __init__ STARTING")
         self.application = application
@@ -173,10 +175,9 @@ class TelegramHandlerService:
             response_generator=self.response_generator,
             pending_action_data_ref=self.pending_action_data
         )
-        self.general_handler = GeneralIntentHandler(
-            language_service=self.language_service,
-            response_generator=self.response_generator
-        )
+        # Use the passed-in instance instead of creating a new one
+        self.general_handler = general_handler
+        
         self.image_generation_handler = ImageGenerationIntentHandler(
             language_service=self.language_service,
             intent_recognizer=self.intent_recognizer,
@@ -985,24 +986,10 @@ class TelegramHandlerService:
             question_for_analysis = self.language_service.get_response_string("replied_message_default_question")
         
         if is_forwarded_message(original_msg):
-            analyzer_prompts = self.language_service.get_llm_prompt_set("forwarded_news_fact_checker")
-            if not (analyzer_prompts and "system" in analyzer_prompts):
-                logger.error("Prompt set for forwarded news fact-check is missing or malformed.")
-                await update.message.reply_text(self.language_service.get_response_string("generic_error_message"))
-                return
-            # Detect language of the forwarded text so the deep research uses that language
-            await self.language_service.determine_language_context(
-                original_text, update.effective_chat.id
-            )
-            analysis_result = await self.response_generator.fact_check_forwarded_message(
-                forwarded_text=original_text,
-                user_question=question_for_analysis,
-                system_prompt=analyzer_prompts["system"],
-                user_prompt_template=analyzer_prompts.get("user_template"),
-                fallback_text=self.language_service.get_response_string(
-                    "analysis_unavailable", "Analysis unavailable."
-                ),
-            )
+            # The direct fact-check is now handled in general_handler.py, so we don't need this block.
+            # We can still route it to the general handler for generic analysis.
+            await self.general_handler.handle_request(update, context, user_msg_txt, "GENERAL_CHAT")
+            return
         else:
             analyzer_prompts = self.language_service.get_llm_prompt_set("replied_message_analyzer")
             if not (analyzer_prompts and "system" in analyzer_prompts):

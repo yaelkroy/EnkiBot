@@ -65,7 +65,7 @@ class EnkiBotApplication:
         )
         self.language_service = LanguageService(
             llm_services=self.llm_services, 
-            db_manager=self.db_manager # Pass db_manager for fetching chat history
+            db_manager=self.db_manager
         )
         
         # Initialize functional modules/services
@@ -95,30 +95,6 @@ class EnkiBotApplication:
             admin_chat_id=config.REPORTS_CHANNEL_ID,
         )
 
-        # Initialize Telegram handlers, passing all necessary services
-        self.handler_service = TelegramHandlerService(
-            application=self.ptb_application,
-            db_manager=self.db_manager,
-            llm_services=self.llm_services,
-            intent_recognizer=self.intent_recognizer,
-            profile_manager=self.profile_manager,
-            api_router=self.api_router,
-            response_generator=self.response_generator,
-            language_service=self.language_service,
-            spam_detector=self.spam_detector,
-            stats_manager=self.stats_manager,
-            karma_manager=self.karma_manager,
-            community_moderation=self.community_moderation,
-            allowed_group_ids=config.ALLOWED_GROUP_IDS, # Pass as set
-            bot_nicknames=config.BOT_NICKNAMES_TO_CHECK # Pass as list
-        )
-
-        # Allow the spam detector to trigger captcha challenges via the
-        # Telegram handler service.
-        self.spam_detector.set_captcha_callback(
-            self.handler_service.start_captcha
-        )
-
         # ------------------------------------------------------------------
         # Fact checking subsystem (skeleton implementation)
         # ------------------------------------------------------------------
@@ -142,6 +118,37 @@ class EnkiBotApplication:
         )
         self.fact_check_bot.register()
 
+        # Update GeneralIntentHandler to include the fact_check_bot instance
+        self.general_handler = GeneralIntentHandler(
+            language_service=self.language_service,
+            response_generator=self.response_generator,
+            fact_check_bot=self.fact_check_bot,
+        )
+        
+        # Initialize Telegram handlers, passing all necessary services
+        self.handler_service = TelegramHandlerService(
+            application=self.ptb_application,
+            db_manager=self.db_manager,
+            llm_services=self.llm_services,
+            intent_recognizer=self.intent_recognizer,
+            profile_manager=self.profile_manager,
+            api_router=self.api_router,
+            response_generator=self.response_generator,
+            language_service=self.language_service,
+            spam_detector=self.spam_detector,
+            stats_manager=self.stats_manager,
+            karma_manager=self.karma_manager,
+            community_moderation=self.community_moderation,
+            allowed_group_ids=config.ALLOWED_GROUP_IDS,
+            bot_nicknames=config.BOT_NICKNAMES_TO_CHECK,
+            # Pass the instance of the new handler, not the class
+            general_handler=self.general_handler,
+        )
+
+        self.spam_detector.set_captcha_callback(
+            self.handler_service.start_captcha
+        )
+
         async def _refresh_news_channels_job(_: ContextTypes.DEFAULT_TYPE) -> None:
             logger.info("News channel refresh job started")
             await self.db_manager.refresh_news_channels()
@@ -152,7 +159,6 @@ class EnkiBotApplication:
             self.ptb_application.job_queue.run_once(
                 _refresh_news_channels_job, when=0
             )
-            # Run the refresh on the first day of each month at midnight.
             self.ptb_application.job_queue.run_monthly(
                 _refresh_news_channels_job,
                 when=dtime(hour=0, minute=0),

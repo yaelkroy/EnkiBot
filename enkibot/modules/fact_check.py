@@ -818,6 +818,10 @@ class FactCheckBot:
         )
         self.app.add_handler(CallbackQueryHandler(self.on_factconfig_cb, pattern=r"^FC:"))
         self.app.add_handler(CommandHandler("factconfig", self.cmd_factconfig))
+        
+    async def run_direct_check(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, text: str):
+        """A new method to be called from general_handler to force a check."""
+        await self._run_check(update, ctx, text, track="news")
 
     # Handlers --------------------------------------------------------------
     async def on_forward(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -825,7 +829,6 @@ class FactCheckBot:
         chat = getattr(update, "effective_chat", None)
         user = getattr(update, "effective_user", None)
         forward_from = getattr(message, "forward_from_chat", None)
-        forward_name = getattr(forward_from, "username", None)
         text_for_logging = get_text(message) or ""
         try:
             logger.info(
@@ -834,12 +837,9 @@ class FactCheckBot:
                 getattr(user, "id", None),
                 getattr(user, "username", None),
                 getattr(message, "message_id", None),
-                forward_name,
+                getattr(forward_from, "username", None),
             )
 
-            # Only handle messages forwarded from channels. Forwards from users or
-            # anonymous sources are ignored, as the news/book gates are intended for
-            # channel content.
             if not forward_from:
                 logger.info("Forward handler: no forward_from_chat, ignoring message")
                 return
@@ -848,7 +848,6 @@ class FactCheckBot:
             if not text and (
                 message.photo or message.video or message.document
             ):
-                # Text-first workflow: only invoke OCR if the forward lacks text
                 text = await self._ocr_extract(message)
             logger.info("Forward handler: extracted text length %d", len(text))
 
