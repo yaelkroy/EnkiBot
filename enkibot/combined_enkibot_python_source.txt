@@ -81,6 +81,7 @@ from enkibot.modules.fact_check import (
     OpenAIWebFetcher,
 )
 from enkibot.modules.primary_source_hunter import PrimarySourceHunter
+from enkibot.core.intent_handlers.general_handler import GeneralIntentHandler
 
 logger = logging.getLogger(__name__)
 
@@ -98,10 +99,10 @@ class EnkiBotApplication:
             google_ai_api_key=config.GOOGLE_AI_API_KEY, google_ai_model_id=config.GOOGLE_AI_MODEL_ID
         )
         self.language_service = LanguageService(
-            llm_services=self.llm_services, 
+            llm_services=self.llm_services,
             db_manager=self.db_manager
         )
-        
+
         # Initialize functional modules/services
         self.intent_recognizer = IntentRecognizer(self.llm_services)
         self.profile_manager = ProfileManager(self.llm_services, self.db_manager)
@@ -158,7 +159,7 @@ class EnkiBotApplication:
             response_generator=self.response_generator,
             fact_check_bot=self.fact_check_bot,
         )
-        
+
         # Initialize Telegram handlers, passing all necessary services
         self.handler_service = TelegramHandlerService(
             application=self.ptb_application,
