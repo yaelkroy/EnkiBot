@@ -27,8 +27,11 @@
 from __future__ import annotations
 
 from typing import Any
+import logging
 import re
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+
+logger = logging.getLogger(__name__)
 
 
 def is_forwarded_message(message: Any) -> bool:
@@ -41,10 +44,14 @@ def is_forwarded_message(message: Any) -> bool:
     if message is None:
         return False
 
+    forward_from = getattr(message, "forward_from", None)
+    forward_from_chat = getattr(message, "forward_from_chat", None)
+    if forward_from or forward_from_chat:
+        logger.info("Forwarded message from %s", forward_from or forward_from_chat)
+        return True
+
     attrs_to_check = (
         "forward_origin",
-        "forward_from",
-        "forward_from_chat",
         "forward_sender_name",
         "forward_date",
     )
