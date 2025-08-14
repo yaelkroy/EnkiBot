@@ -49,7 +49,6 @@ from telegram.ext import (
 from ..utils.message_utils import get_text, is_forwarded_message
 from ..core.llm_services import LLMServices
 import logging
-import json
 from types import SimpleNamespace
 try:  # pragma: no cover - optional dependency
     import openai
@@ -392,6 +391,49 @@ class NewsGate:
         if self._heuristic(text_l):
             return 1.0
         return self._classifier(text_l)
+
+    def debug_predict(self, text: str) -> tuple[float, List[str]]:
+        """Return score and human-readable reasons for the news decision."""
+        text_l = text.lower()
+        reasons: List[str] = []
+        # Heuristic features (short-circuit to 1.0)
+        for k in self.source_keywords:
+            if k in text_l:
+                reasons.append(f"source:{k}")
+                break
+        for v in self.news_verbs:
+            if v in text_l:
+                reasons.append(f"verb:{v}")
+                break
+        for loc in self.location_keywords:
+            if loc in text_l:
+                reasons.append(f"location:{loc}")
+                break
+        for c in self.crisis_keywords:
+            if c in text_l:
+                reasons.append(f"crisis:{c}")
+                break
+        if self.time_re.search(text_l):
+            reasons.append("time_mention")
+        if re.search(r"https?://", text_l):
+            reasons.append("has_url")
+        if reasons:
+            return 1.0, ["heuristic"] + reasons
+        # Classifier mode
+        score = 0.0
+        if any(k in text_l for k in self.classifier_keywords):
+            score += 0.4
+            reasons.append("classifier:keywords")
+        if self.time_re.search(text_l):
+            score += 0.2
+            reasons.append("classifier:time")
+        if re.search(r"https?://", text_l):
+            score += 0.2
+            reasons.append("classifier:url")
+        if len(text_l) > 80:
+            score += 0.2
+            reasons.append("classifier:length>80")
+        return min(score, 1.0), reasons
 
 
 class QuoteGate:
@@ -853,8 +895,8 @@ class FactCheckBot:
                 getattr(user, "id", None),
                 getattr(user, "username", None),
                 getattr(message, "message_id", None),
-                (forward_username or None),
-                (forward_title or None),
+                forward_username,
+                forward_title,
                 getattr(message, "is_automatic_forward", None),
             )
             # Mirror to terminal for easy debugging
@@ -883,25 +925,38 @@ class FactCheckBot:
                 forward_username.lstrip("@").lower() if forward_username else None
             )
             logger.info("Forward handler: normalized username=%s", normalized_username)
+            # Check against known news channels
+            is_known_source = False
             if normalized_username and self.db_manager:
                 try:
                     raw_sources = await self.db_manager.get_news_channel_usernames()
                     known_sources = {name.lstrip("@").lower() for name in raw_sources}
+                    is_known_source = normalized_username in known_sources
                     logger.info(
-                        "Forward handler: loaded %d known news channels", len(known_sources)
+                        "Forward handler: loaded %d known news channels (known=%s)",
+                        len(known_sources),
+                        is_known_source,
+                    )
+                    print(
+                        f"SOURCE known={is_known_source} channel={normalized_username}"
                     )
                 except Exception:
-                    known_sources = set()
                     logger.exception("Forward handler: failed to load news channel list")
-                if normalized_username in known_sources:
-                    logger.info(
-                        "Forward handler: channel %s recognized, triggering news check",
-                        normalized_username,
-                    )
-                    await self._run_check(update, ctx, text, track="news")
-                    return
+
+            if is_known_source:
                 logger.info(
-                    "Forward handler: channel %s not in news channel list", normalized_username
+                    "Forward handler: channel %s recognized, triggering news check",
+                    normalized_username,
+                )
+                await self._run_check(update, ctx, text, track="news")
+                return
+            elif normalized_username:
+                logger.info(
+                    "Forward handler: channel %s not in news channel list",
+                    normalized_username,
+                )
+                print(
+                    f"SOURCE known=False channel={normalized_username}"
                 )
             else:
                 logger.info(
@@ -909,6 +964,7 @@ class FactCheckBot:
                     normalized_username,
                     bool(self.db_manager),
                 )
+
             cfg = self.cfg_reader(update.effective_chat.id)
             logger.info(
                 "Forward handler: chat %s config %s", update.effective_chat.id, cfg
@@ -928,8 +984,12 @@ class FactCheckBot:
             if cfg.get("auto", {}).get("auto_check_news", True):
                 p_news = await self.news_gate.predict(text)
                 p_book = await self.quote_gate.predict(text)
+                p_news_dbg, reasons = self.news_gate.debug_predict(text)
                 logger.info(
                     "Forward handler: gate scores p_news=%.2f p_book=%.2f", p_news, p_book
+                )
+                print(
+                    f"GATE p_news={p_news:.2f} p_book={p_book:.2f} reasons={'|'.join(reasons) if reasons else 'none'}"
                 )
                 if self.db_manager and update.effective_chat:
                     try:
@@ -942,18 +1002,21 @@ class FactCheckBot:
                     except Exception:
                         pass
                 if p_book >= 0.70:
+                    print(f"DECISION track=book action=trigger threshold=0.70 score={p_book:.2f}")
                     logger.info(
                         "Forward handler: p_book %.2f >= 0.70, triggering book check", p_book
                     )
                     await self._run_check(update, ctx, text, track="book")
                     return
                 if p_news >= 0.70:
+                    print(f"DECISION track=news action=trigger threshold=0.70 score={p_news:.2f}")
                     logger.info(
                         "Forward handler: p_news %.2f >= 0.70, triggering news check", p_news
                     )
                     await self._run_check(update, ctx, text, track="news")
                     return
                 if p_book >= 0.55:
+                    print(f"DECISION track=book action=hint threshold=0.55 score={p_book:.2f}")
                     logger.info("Forward handler: p_book %.2f >= 0.55 show hint", p_book)
                     hint = (
                         self.language_service.get_response_string("hint_check_quote", "Check quote?")
@@ -963,6 +1026,7 @@ class FactCheckBot:
                     await self._show_author_only_hint(update, ctx, hint, "book")
                     return
                 if p_news >= 0.55:
+                    print(f"DECISION track=news action=hint threshold=0.55 score={p_news:.2f}")
                     logger.info("Forward handler: p_news %.2f >= 0.55 show hint", p_news)
                     hint = (
                         self.language_service.get_response_string("hint_check_news", "Check as news?")
@@ -971,6 +1035,10 @@ class FactCheckBot:
                     )
                     await self._show_author_only_hint(update, ctx, hint, "news")
                     return
+                # Below all thresholds -> not news/quote
+                print(
+                    f"DECISION track=none action=ignore score_news={p_news:.2f} score_book={p_book:.2f} reasons={'|'.join(reasons) if reasons else 'none'}"
+                )
         finally:
             if chat and user and text_for_logging and self.db_manager:
                 try:
@@ -1028,6 +1096,17 @@ class FactCheckBot:
         logger.debug(
             "Run check: verdict label=%s confidence=%.2f", verdict.label, verdict.confidence
         )
+        # Mirror verdict to terminal for visibility
+        try:
+            preview = (verdict.summary or "").replace("\n", " ")
+            if len(preview) > 160:
+                preview = preview[:157] + "..."
+            print(
+                f"VERDICT track={track} label={verdict.label} conf={verdict.confidence:.2f} | {preview}"
+            )
+        except Exception:
+            pass
+
         label = verdict.label.strip().lower()
 
         target_msg = message or update.effective_message
