@@ -17,9 +17,11 @@ def build_bot(db_usernames):
     db_manager = SimpleNamespace(
         get_news_channel_usernames=AsyncMock(return_value=db_usernames),
         log_fact_gate=AsyncMock(),
+        log_chat_message_and_upsert_user=AsyncMock(),
     )
     cfg = lambda _id: {"satire": {"enabled": False}, "auto": {"auto_check_news": True}}
-    bot = FactCheckBot(app=app, fc=fc, cfg_reader=cfg, db_manager=db_manager, language_service=SimpleNamespace(get_response_string=lambda *a, **k: ""))
+    language_service = SimpleNamespace(get_response_string=lambda *a, **k: "", current_lang="en")
+    bot = FactCheckBot(app=app, fc=fc, cfg_reader=cfg, db_manager=db_manager, language_service=language_service)
     bot._run_check = AsyncMock()
     return bot
 
@@ -35,7 +37,11 @@ def make_update(username, text="sample"):
         reply_text=AsyncMock(),
         set_reaction=AsyncMock(),
     )
-    update = SimpleNamespace(effective_message=msg, effective_chat=SimpleNamespace(id=123))
+    update = SimpleNamespace(
+        effective_message=msg,
+        effective_chat=SimpleNamespace(id=123),
+        effective_user=SimpleNamespace(id=1, username="user", first_name="User", last_name="Test"),
+    )
     return update
 
 
@@ -89,3 +95,11 @@ def test_forward_without_channel_ignored():
     ctx = SimpleNamespace()
     asyncio.run(bot.on_forward(update, ctx))
     bot._run_check.assert_not_called()
+
+
+def test_forward_logs_message():
+    bot = build_bot({"known"})
+    update = make_update("known")
+    ctx = SimpleNamespace()
+    asyncio.run(bot.on_forward(update, ctx))
+    bot.db_manager.log_chat_message_and_upsert_user.assert_awaited_once()

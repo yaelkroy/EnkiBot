@@ -827,6 +827,30 @@ class FactCheckBot:
         forward_from = getattr(message, "forward_from_chat", None)
         forward_name = getattr(forward_from, "username", None)
 
+        text_for_logging = get_text(message) or ""
+        if chat and user and text_for_logging and self.db_manager:
+            try:
+                await self.db_manager.log_chat_message_and_upsert_user(
+                    chat_id=chat.id,
+                    user_id=user.id,
+                    username=getattr(user, "username", None),
+                    first_name=getattr(user, "first_name", None),
+                    last_name=getattr(user, "last_name", None),
+                    message_id=message.message_id,
+                    message_text=text_for_logging,
+                    preferred_language=getattr(self.language_service, "current_lang", None),
+                )
+                logger.info(
+                    "Forward handler: logged forwarded message chat=%s user=%s msg_id=%s",
+                    chat.id,
+                    user.id,
+                    message.message_id,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Forward handler: failed to log forwarded message: %s", exc
+                )
+
         logger.info(
             "Forward handler: chat=%s user=%s(%s) msg_id=%s forwarded_from=%s",
             getattr(chat, "id", None),
@@ -843,7 +867,7 @@ class FactCheckBot:
             logger.info("Forward handler: no forward_from_chat, ignoring message")
             return
 
-        text = get_text(message) or ""
+        text = text_for_logging
         if not text and (
             message.photo or message.video or message.document
         ):
