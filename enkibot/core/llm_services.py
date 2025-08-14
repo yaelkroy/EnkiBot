@@ -36,6 +36,8 @@ except Exception:  # pragma: no cover
     openai = SimpleNamespace(AsyncOpenAI=None)
 import asyncio
 import time
+import base64
+from io import BytesIO
 from typing import List, Dict, Optional, Any, Tuple
 
 from enkibot import config
@@ -57,6 +59,8 @@ class LLMServices:
         self.openai_embedding_model_id = config.OPENAI_EMBEDDING_MODEL_ID
         self.openai_classification_model_id = config.OPENAI_CLASSIFICATION_MODEL_ID
         self.openai_translation_model_id = config.OPENAI_TRANSLATION_MODEL_ID
+        # Dedicated vision-capable chat model to handle images (e.g., gpt-4o)
+        self.openai_vision_model_id = getattr(config, "OPENAI_MULTIMODAL_IMAGE_MODEL_ID", None) or openai_model_id
         self.openai_dalle_model_id = config.OPENAI_DALLE_MODEL_ID
         self.openai_whisper_model_id = config.OPENAI_WHISPER_MODEL_ID # New
 
@@ -412,3 +416,48 @@ class LLMServices:
         finally:
             if self.openai_async_client:
                 await self.openai_async_client.aclose()
+
+    async def extract_text_from_image_bytes(self, image_bytes: bytes, prompt: str = None, max_tokens: int = 800) -> Optional[str]:
+        """Extract visible text from an image using an OpenAI vision-capable model.
+
+        - Accepts raw image bytes (e.g., downloaded from Telegram).
+        - Uses chat.completions with image input. Requires that the selected model supports vision.
+        - Returns extracted text or None.
+        """
+        if not self.is_provider_configured("openai"):
+            logger.warning("OpenAI client not initialized or API key missing. Cannot do OCR.")
+            return None
+        if not image_bytes:
+            return None
+        try:
+            b64 = base64.b64encode(image_bytes).decode("ascii")
+            data_url = f"data:image/jpeg;base64,{b64}"
+            system_text = "You are an OCR engine. Extract all readable text from the image accurately. Preserve line breaks for separate blocks when useful."
+            if prompt:
+                system_text += " " + prompt
+            messages = [
+                {"role": "system", "content": system_text},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract text"},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
+            ]
+            model_id = self.openai_vision_model_id or self.openai_model_id
+            logger.info(f"Calling OpenAI vision OCR (model: {model_id})")
+            completion = await self.openai_async_client.chat.completions.create(
+                model=model_id,
+                messages=messages,  # type: ignore[arg-type]
+                temperature=0.0,
+                max_tokens=max_tokens,
+            )
+            if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
+                text = completion.choices[0].message.content.strip()
+                logger.info(f"OCR extracted {len(text)} chars")
+                return text
+            logger.warning("OCR returned no content.")
+        except Exception as e:
+            logger.error(f"Vision OCR call failed: {e}", exc_info=True)
+        return None

@@ -116,17 +116,14 @@ DB_CONNECTION_STRING = (
 # --- LLM Provider API Keys & Models ---
 # OpenAI
 OPENAI_API_KEY = os.getenv('ENKI_BOT_OPENAI_API_KEY')
-OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4.1-mini')                 # General orchestrator
-# Default deep‑research model. ``gpt-4o-mini`` works for most accounts with
-# built‑in web search. Override with ``o3-deep-research`` or another supported
-# model via the environment variable if you have access.
-OPENAI_DEEP_RESEARCH_MODEL_ID = os.getenv(
-    'ENKI_BOT_OPENAI_DEEP_RESEARCH_MODEL_ID', 'gpt-4o-mini'
-)
-OPENAI_EMBEDDING_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_EMBEDDING_MODEL_ID', 'text-embedding-3-large')
-OPENAI_CLASSIFICATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_CLASSIFICATION_MODEL_ID', 'gpt-3.5-turbo') # For faster tasks like intent classification
-OPENAI_TRANSLATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_TRANSLATION_MODEL_ID', 'gpt-4o-mini')      # For language pack creation
+OPENAI_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MODEL_ID', 'gpt-4o-mini')                 # General orchestrator (vision-capable)
+# Default deep‑research model. Override if you have access to o3-deep-research, etc.
+OPENAI_DEEP_RESEARCH_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_DEEP_RESEARCH_MODEL_ID', 'gpt-4o-mini')
+# Vision-capable model to use for OCR / image understanding (chat with images)
 OPENAI_MULTIMODAL_IMAGE_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_MULTIMODAL_IMAGE_MODEL_ID', 'gpt-4o')
+OPENAI_EMBEDDING_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_EMBEDDING_MODEL_ID', 'text-embedding-3-large')
+OPENAI_CLASSIFICATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_CLASSIFICATION_MODEL_ID', 'gpt-4o-mini')
+OPENAI_TRANSLATION_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_TRANSLATION_MODEL_ID', 'gpt-4o-mini')
 OPENAI_DALLE_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_DALLE_MODEL_ID', 'dall-e-3')
 OPENAI_WHISPER_MODEL_ID = os.getenv('ENKI_BOT_OPENAI_WHISPER_MODEL_ID', 'whisper-1')
 OPENAI_SEARCH_CONTEXT_SIZE = os.getenv('ENKI_BOT_OPENAI_SEARCH_CONTEXT_SIZE')
@@ -175,3 +172,6 @@ else:
 DEFAULT_LANGUAGE = "en"
 # The directory where language-specific prompt files (e.g., en.json, ru.json) are stored.
 LANGUAGE_PACKS_DIR = os.path.join(os.path.dirname(__file__), 'lang')
+
+# Number of independent sources required to consider a claim "confirmed"
+FACTCHECK_CONFIRMATION_THRESHOLD = int(os.getenv('ENKI_BOT_FACTCHECK_CONFIRM_THRESHOLD', '2'))
