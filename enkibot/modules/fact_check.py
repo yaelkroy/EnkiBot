@@ -260,6 +260,42 @@ class QuoteGate:
 # ---------------------------------------------------------------------------
 
 URL_RE = re.compile(r"https?://\S+", re.I)
+MEDIA_DOMAINS = {
+    "youtube.com", "youtu.be", "vimeo.com", "rutube.ru",
+    "tiktok.com", "vm.tiktok.com", "music.yandex.ru", "soundcloud.com",
+    "spotify.com", "apple.com", "music.apple.com", "vk.com", "ok.ru",
+}
+
+
+def _extract_domains(urls: List[str]) -> List[str]:
+    ds: List[str] = []
+    for u in urls:
+        try:
+            d = (urlparse(u).netloc or u).lower()
+            d = d.split(":")[0]
+            # Strip common www.
+            if d.startswith("www."):
+                d = d[4:]
+            ds.append(d)
+        except Exception:
+            continue
+    return ds
+
+
+def is_media_link_only(text: str, extra_allow_len: int = 16) -> bool:
+    """Return True if text contains only media links (e.g., YouTube) and almost no other content."""
+    if not text:
+        return False
+    urls = URL_RE.findall(text)
+    if not urls:
+        return False
+    domains = _extract_domains(urls)
+    if not domains or not all(any(dom.endswith(md) or dom == md for md in MEDIA_DOMAINS) for dom in domains):
+        return False
+    # Remove URLs and measure leftover text length
+    text_wo = URL_RE.sub(" ", text)
+    text_wo = re.sub(r"\s+", " ", text_wo).strip()
+    return len(text_wo) <= extra_allow_len
 
 
 def normalize_text(s: str) -> str:
@@ -544,6 +580,8 @@ class FactChecker:
             return Verdict(label="unverified", confidence=0.0, summary="No claim to check.", sources=[])
         debug: List[str] = [f"track={track}"]
         evidence: List[Evidence] = []
+        blocked = getattr(config, "FACTCHECK_DOMAIN_BLOCKLIST", set())
+        search_errors: List[str] = []
         if isinstance(claim, Claim) and self.fetcher:
             try:
                 web_hits = await self.fetcher.fact_checker_search(claim)
@@ -554,14 +592,16 @@ class FactChecker:
                     top_domains = ", ".join({e.domain for e in web_hits[:3]})
                     print(f"WEB-DOMAINS {top_domains}")
             except Exception as e:
-                logger.error("Research: web fetcher error: %s", e, exc_info=True)
-                debug.append(f"web fetcher error: {e}")
+                err = str(e)
+                logger.error("Research: web fetcher error: %s", err, exc_info=True)
+                debug.append(f"web fetcher error: {err}")
+                search_errors.append(err)
         # Translation fallback if not enough independent confirmations and non-English
         if (
             isinstance(claim, Claim)
             and self.fetcher
             and claim.lang and claim.lang != "en"
-            and len({e.domain for e in evidence}) < getattr(config, "FACTCHECK_CONFIRMATION_THRESHOLD", 2)
+            and len({e.domain for e in evidence if (e.domain or '').lower() not in blocked}) < getattr(config, "FACTCHECK_CONFIRMATION_THRESHOLD", 2)
             and self.llm_services
         ):
             try:
@@ -593,8 +633,16 @@ class FactChecker:
                     debug.append(f"web fetcher returned {len(web_hits2)} items after translation")
                     print(f"WEB-FETCH translated hits={len(web_hits2)}")
             except Exception as e:
-                logger.error("Research: translation/web fetch fallback failed: %s", e, exc_info=True)
-                debug.append(f"translation/web fetch fallback error: {e}")
+                err = str(e)
+                logger.error("Research: translation/web fetch fallback failed: %s", err, exc_info=True)
+                debug.append(f"translation/web fetch fallback error: {err}")
+                search_errors.append(err)
+
+        # If we couldn't access any sources at all, return unverified without asking LLM
+        distinct_ok_domains = {e.domain for e in evidence if (e.domain or '').lower() not in blocked}
+        if not distinct_ok_domains:
+            debug.append("no accessible sources reachable; skipping LLM verdict")
+            return Verdict(label="unverified", confidence=0.0, summary="", sources=evidence, debug=debug)
 
         if isinstance(claim, Quote) and track == "book":
             verdict = await self._llm_quote_verdict(claim, debug)
@@ -680,7 +728,7 @@ class FactCheckBot:
         except Exception:
             pass
 
-        label = (verdict.label or "").strip().lower()
+        label = (verdict.label or "").trim().lower()
         target_msg = message or update.effective_message
 
         # Persist
@@ -803,6 +851,12 @@ class FactCheckBot:
             return
 
         # Otherwise run gates
+        # Skip media-only link forwards (e.g., YouTube shorts) from auto fact-checking
+        if is_media_link_only(content_text):
+            print("GATE-SKIP reason=media-only-link")
+            await self._log_forward_to_db(chat, user, message, text_for_logging)
+            return
+
         p_news = await self.news_gate.predict(content_text)
         p_book = await self.quote_gate.predict(content_text)
         _, reasons = self.news_gate.debug_predict(content_text)
