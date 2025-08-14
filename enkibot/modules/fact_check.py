@@ -175,7 +175,7 @@ class NewsGate:
             r"\b(\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|"
             r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|yesterday|"
             r"сегодня|вчера|понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье|"
-            r"январ[ьяе]|феврал[ьяе]|март[ае]?|апрел[ьяе]|ма[йея]|июн[ьяе]|июл[ьяе]|август[ае]?|сентябр[ьяе]|октябр[ьяе]|ноябр[ьяе]|декабр[ьяе])\b",
+            r"январ[ьяе]|феврал[ьяе]|март[ае]?|апрел[ьяе]|ма[йея]|июн[ьяе]|июл[ьяе]|август[ане]?|сентябр[ьяе]|октябр[ьяе]|ноябр[ьяе]|декабр[ьяе])\b",
             re.I,
         )
         self.classifier_keywords = [*self.news_verbs, "according to", "today", "yesterday"]
@@ -340,17 +340,21 @@ class OpenAIWebFetcher(Fetcher):
             url = item.get("url")
             if not url:
                 continue
-            domain = urlparse(url).netloc or url
-            if domain in seen:
+            domain = (urlparse(url).netloc or url).lower()
+            # Skip blocked domains (e.g., t.me)
+            base_domain = domain.split(':')[0]
+            if base_domain in getattr(config, "FACTCHECK_DOMAIN_BLOCKLIST", set()):
                 continue
-            seen.add(domain)
+            if base_domain in seen:
+                continue
+            seen.add(base_domain)
             title = item.get("title", "")
             evidences.append(
                 Evidence(
                     url=url,
-                    domain=domain,
+                    domain=base_domain,
                     stance="support",
-                    note=title or domain,
+                    note=title or base_domain,
                     published_at=None,
                     snapshot_url=None,
                     tier=None,
@@ -426,16 +430,19 @@ class FactChecker:
 
         # Heuristic: consider confirmation if we have enough independent domains
         sources = sources or []
-        distinct_domains = {e.domain for e in sources}
-        confirmed_by_web = len(distinct_domains) >= getattr(config, "FACTCHECK_CONFIRMATION_THRESHOLD", 2)
+        # Exclude any sources that are from blocked domains
+        blocked = getattr(config, "FACTCHECK_DOMAIN_BLOCKLIST", set())
+        filtered_sources = [e for e in sources if (e.domain or "").lower() not in blocked]
+        distinct_domains = {e.domain for e in filtered_sources}
+        confirmed_by_web = len(distinct_domains) >= getattr(config, "FACTCHECK_CONFIRMATION_THRESHOLD", 3)
 
         # Map to simple labels without emitting JSON in user output
         if confirmed_by_web:
             return Verdict(
                 label="true",
-                confidence=0.8,
-                summary="",  # no text body; UI logic will react with 👍 only
-                sources=sources,
+                confidence=0.9,
+                summary="",
+                sources=filtered_sources,
             )
 
         # Otherwise, ask the model to synthesize a short textual explanation (no JSON) with the web tool enabled

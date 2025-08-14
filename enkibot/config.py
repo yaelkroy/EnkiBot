@@ -174,4 +174,8 @@ DEFAULT_LANGUAGE = "en"
 LANGUAGE_PACKS_DIR = os.path.join(os.path.dirname(__file__), 'lang')
 
 # Number of independent sources required to consider a claim "confirmed"
-FACTCHECK_CONFIRMATION_THRESHOLD = int(os.getenv('ENKI_BOT_FACTCHECK_CONFIRM_THRESHOLD', '2'))
+FACTCHECK_CONFIRMATION_THRESHOLD = int(os.getenv('ENKI_BOT_FACTCHECK_CONFIRM_THRESHOLD', '3'))
+# Domains that must NOT be used as confirmations for forwarded news (comma-separated)
+FACTCHECK_DOMAIN_BLOCKLIST = set(
+    d.strip().lower() for d in os.getenv('ENKI_BOT_FACTCHECK_DOMAIN_BLOCKLIST', 't.me,telegram.me').split(',') if d.strip()
+)

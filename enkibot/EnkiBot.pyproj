@@ -13,6 +13,7 @@
     <OutputPath>.</OutputPath>
     <Name>enkibot</Name>
     <RootNamespace>EnkiBot</RootNamespace>
+    <InterpreterId>CondaEnv|CondaEnv|enkibot_env</InterpreterId>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -84,6 +85,9 @@
     <Content Include="lang\x-ps.json" />
     <Content Include="LICENSE" />
     <Content Include="README.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="CondaEnv|CondaEnv|enkibot_env" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
