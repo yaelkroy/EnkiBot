@@ -33,6 +33,8 @@ class KarmaManager:
     - record_reaction_event(chat_id, msg_id, target_user_id, rater_user_id, emoji)
     - get_user_stats(user_id)
     - get_top_users(chat_id)
+    - get_global_top()
+    - diagnose(chat_id)
     """
 
     def __init__(self, db: DatabaseManager):
@@ -50,6 +52,97 @@ class KarmaManager:
         # Emoji mapping (can be made configurable later)
         self._pos_emojis = set(getattr(config, "KARMA_POS_EMOJIS", ["👍", "❤️", "👏", "🔥"]))
         self._neg_emojis = set(getattr(config, "KARMA_NEG_EMOJIS", ["👎", "💩"]))
+
+    # -------------------- Diagnostics --------------------
+    async def diagnose(self, chat_id: Optional[int] = None) -> str:
+        """Run detailed terminal diagnostics for the karma subsystem.
+
+        Prints detailed status to the terminal and returns a short summary string
+        suitable for replying in chat.
+        """
+        lines: List[str] = []
+        print("KARMA-DIAG: starting diagnostics...")
+        if not getattr(self.db, "connection_string", None):
+            msg = "Database connection string is not configured."
+            print(f"KARMA-DIAG: {msg}")
+            return msg
+        conn = self.db.get_db_connection()
+        if not conn:
+            msg = "Database connection could not be established (see logs)."
+            print(f"KARMA-DIAG: {msg}")
+            return msg
+        try:
+            with conn.cursor() as cursor:
+                # Check required tables
+                req_tables = [
+                    "user_rep_current",
+                    "karma_events",
+                    "message_scores",
+                    "user_rep_rollup",
+                ]
+                missing: List[str] = []
+                for t in req_tables:
+                    cursor.execute(
+                        "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?",
+                        (t,),
+                    )
+                    if not cursor.fetchone():
+                        missing.append(t)
+                print(f"KARMA-DIAG: required tables missing: {missing if missing else 'none'}")
+                if missing:
+                    lines.append("Missing tables: " + ", ".join(missing))
+                # Column checks for user_rep_current
+                cursor.execute(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'user_rep_current'"
+                )
+                cols = {r.COLUMN_NAME.lower() for r in cursor.fetchall()} if cursor.description else set()
+                needed_cols = {"chat_id", "user_id", "rep", "last_seen"}
+                missing_cols = sorted(list(needed_cols - cols)) if cols else list(needed_cols)
+                print(f"KARMA-DIAG: user_rep_current columns: {sorted(cols) if cols else 'n/a'}")
+                if missing_cols:
+                    print(f"KARMA-DIAG: user_rep_current missing columns: {missing_cols}")
+                    lines.append("user_rep_current missing columns: " + ", ".join(missing_cols))
+                # Row counts
+                def _count(q: str, params: tuple = ()) -> int:
+                    try:
+                        cursor.execute(q, params) if params else cursor.execute(q)
+                        row = cursor.fetchone()
+                        return int(row[0]) if row else 0
+                    except Exception as e:
+                        print(f"KARMA-DIAG: count failed for query {q}: {e}")
+                        return -1
+                total_rep_rows = _count("SELECT COUNT(*) FROM user_rep_current")
+                total_events = _count("SELECT COUNT(*) FROM karma_events")
+                print(f"KARMA-DIAG: user_rep_current rows={total_rep_rows} | karma_events rows={total_events}")
+                if chat_id is not None:
+                    per_chat_rows = _count("SELECT COUNT(*) FROM user_rep_current WHERE chat_id = ?", (chat_id,))
+                    ev_per_chat = _count("SELECT COUNT(*) FROM karma_events WHERE chat_id = ?", (chat_id,))
+                    print(f"KARMA-DIAG: chat {chat_id}: rep_rows={per_chat_rows} | events={ev_per_chat}")
+                    lines.append(f"chat {chat_id}: rep_rows={per_chat_rows}, events={ev_per_chat}")
+                # Sample rows
+                try:
+                    cursor.execute(
+                        "SELECT TOP 5 chat_id, user_id, rep, last_seen FROM user_rep_current ORDER BY rep DESC"
+                    )
+                    sample = cursor.fetchall()
+                    print("KARMA-DIAG: sample user_rep_current top5:")
+                    for r in sample or []:
+                        print(f"  chat={getattr(r,'chat_id',None)} user={getattr(r,'user_id',None)} rep={getattr(r,'rep',None)} last={getattr(r,'last_seen',None)}")
+                except Exception as e:
+                    print(f"KARMA-DIAG: sample read failed: {e}")
+                # Final summary
+                if total_events == 0 and total_rep_rows == 0:
+                    lines.append("No karma data recorded yet.")
+                elif total_events > 0 and total_rep_rows == 0:
+                    lines.append("Events exist but user_rep_current is empty. Rep rollup may be missing.")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        summary = "; ".join(lines) if lines else "Karma diagnostics: OK."
+        print(f"KARMA-DIAG: summary -> {summary}")
+        return summary
 
     # -------------------- Internal helpers --------------------
     def _now(self) -> float:
@@ -181,16 +274,24 @@ class KarmaManager:
         except Exception as e:
             logger.error(f"Failed to record reaction event: {e}", exc_info=True)
 
-    async def get_user_stats(self, chat_id: int, user_id: int) -> Optional[Dict[str, float]]:
-        """Returns aggregated current rep for the user in a given chat and total across chats."""
-        # Per-chat score
+    async def get_user_stats(self, user_id: int) -> Optional[Dict[str, float]]:
+        """Returns aggregated current rep for the user across all chats (for simple notifications)."""
+        row = await self.db.execute_query(
+            "SELECT SUM(rep) AS total FROM user_rep_current WHERE user_id = ?",
+            (user_id,),
+            fetch_one=True,
+        )
+        total = float(getattr(row, "total", 0.0) if row else 0.0)
+        return {"received": total}
+
+    async def get_user_stats_in_chat(self, chat_id: int, user_id: int) -> Optional[Dict[str, float]]:
+        """Returns per-chat and global karma for a user."""
         row_chat = await self.db.execute_query(
             "SELECT rep FROM user_rep_current WHERE chat_id = ? AND user_id = ?",
             (chat_id, user_id),
             fetch_one=True,
         )
         chat_rep = float(getattr(row_chat, "rep", 0.0) or 0.0) if row_chat else 0.0
-        # Global
         row_global = await self.db.execute_query(
             "SELECT SUM(rep) AS total FROM user_rep_current WHERE user_id = ?",
             (user_id,),
@@ -215,6 +316,7 @@ class KarmaManager:
             fetch_all=True,
         )
         if not rows:
+            print(f"KARMA: get_top_users -> no rows for chat {chat_id}. Consider running /karmadiag")
             return []
         # Apply exponential decay on-the-fly for display
         from datetime import datetime, timezone
@@ -234,6 +336,30 @@ class KarmaManager:
             fname = getattr(r, "FirstName", None)
             display = (f"@{uname}" if uname else (fname or str(uid)))
             tmp.append((uid, decayed, display))
+        tmp.sort(key=lambda x: x[1], reverse=True)
+        top = tmp[:limit]
+        return [{"user_id": uid, "name": name, "score": round(score, 2)} for uid, score, name in top]
+
+    async def get_global_top(self, limit: int = 10) -> List[Dict[str, float]]:
+        top_n = int(max(1, limit) * 5)
+        query = (
+            f"SELECT TOP {top_n} urc.user_id, SUM(urc.rep) AS total, MAX(up.Username) AS Username, MAX(up.FirstName) AS FirstName "
+            f"FROM user_rep_current urc WITH (NOLOCK) "
+            f"LEFT JOIN UserProfiles up WITH (NOLOCK) ON up.UserID = urc.user_id "
+            f"GROUP BY urc.user_id ORDER BY SUM(urc.rep) DESC"
+        )
+        rows = await self.db.execute_query(query, fetch_all=True)
+        if not rows:
+            print("KARMA: get_global_top -> no rows in user_rep_current. Run /karmadiag for details.")
+            return []
+        tmp = []
+        for r in rows:
+            uid = int(getattr(r, "user_id", 0))
+            score = float(getattr(r, "total", 0.0) or 0.0)
+            uname = getattr(r, "Username", None)
+            fname = getattr(r, "FirstName", None)
+            name = (f"@{uname}" if uname else (fname or str(uid)))
+            tmp.append((uid, score, name))
         tmp.sort(key=lambda x: x[1], reverse=True)
         top = tmp[:limit]
         return [{"user_id": uid, "name": name, "score": round(score, 2)} for uid, score, name in top]

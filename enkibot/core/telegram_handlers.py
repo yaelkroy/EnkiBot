@@ -1118,6 +1118,9 @@ class TelegramHandlerService:
         if chat_id is None:
             return
         top_users = await self.karma_manager.get_top_users(chat_id)
+        if not top_users and update.effective_chat.type == "private":
+            # Fallback to global top in private chats
+            top_users = await self.karma_manager.get_global_top()
         if not top_users:
             if update.message:
                 await update.message.reply_text("No karma data available.")
@@ -1610,6 +1613,7 @@ class TelegramHandlerService:
         self.application.add_handler(CommandHandler("nsfw_threshold", self.set_nsfw_threshold_command))
         self.application.add_handler(CommandHandler("setspamthreshold", self.set_spam_threshold_command))
         self.application.add_handler(CommandHandler("toggle_ai", self.toggle_ai_command))
+        self.application.add_handler(CommandHandler("karmadiag", self.karmadiag_command))
         self.application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.handle_new_chat_members))
         self.application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, self.handle_left_chat_member))
         self.application.add_handler(CallbackQueryHandler(self.captcha_button_callback, pattern=r"^captcha_button:"))
@@ -1657,3 +1661,14 @@ class TelegramHandlerService:
 
         # Bind reaction handlers after all methods are set up
         self.bind_reaction_handlers()
+
+    async def karmadiag_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id is None:
+            return
+        # Run diagnostics and echo a brief summary
+        summary = await self.karma_manager.diagnose(chat_id)
+        if update.message:
+            await update.message.reply_text(summary)
+        else:
+            await context.bot.send_message(chat_id=chat_id, text=summary)
