@@ -46,7 +46,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-from ..utils.message_utils import get_text
+from ..utils.message_utils import get_text, is_forwarded_message
 from ..core.llm_services import LLMServices
 import logging
 import json
@@ -828,20 +828,48 @@ class FactCheckBot:
         message = update.effective_message
         chat = getattr(update, "effective_chat", None)
         user = getattr(update, "effective_user", None)
-        forward_from = getattr(message, "forward_from_chat", None)
+        # Try both legacy and new-style forward metadata
+        forward_from_chat = getattr(message, "forward_from_chat", None)
+        forward_origin = getattr(message, "forward_origin", None)
+        forward_username: Optional[str] = None
+        forward_title: Optional[str] = None
+        if forward_from_chat:
+            forward_username = getattr(forward_from_chat, "username", None)
+            forward_title = getattr(forward_from_chat, "title", None)
+        elif forward_origin:
+            # Bot API >= 7.x uses MessageOrigin* objects
+            try:
+                origin_chat = getattr(forward_origin, "chat", None) or getattr(forward_origin, "sender_chat", None)
+                forward_username = getattr(origin_chat, "username", None)
+                forward_title = getattr(origin_chat, "title", None)
+            except Exception:
+                forward_username = None
+        is_fwd = is_forwarded_message(message)
         text_for_logging = get_text(message) or ""
         try:
             logger.info(
-                "Forward handler: chat=%s user=%s(%s) msg_id=%s forwarded_from=%s",
+                "Forward handler: chat=%s user=%s(%s) msg_id=%s forwarded_from=%s title=%s auto=%s",
                 getattr(chat, "id", None),
                 getattr(user, "id", None),
                 getattr(user, "username", None),
                 getattr(message, "message_id", None),
-                getattr(forward_from, "username", None),
+                (forward_username or None),
+                (forward_title or None),
+                getattr(message, "is_automatic_forward", None),
             )
+            # Mirror to terminal for easy debugging
+            if chat and user:
+                preview = (text_for_logging or "").replace("\n", " ")
+                if len(preview) > 140:
+                    preview = preview[:137] + "..."
+                print(
+                    f"FORWARDED chat={chat.id} user={user.username or user.id} msg={getattr(message,'message_id',None)} "
+                    f"from={forward_username or forward_title or 'unknown'} auto={getattr(message,'is_automatic_forward', None)} | {preview}"
+                )
 
-            if not forward_from:
-                logger.info("Forward handler: no forward_from_chat, ignoring message")
+            # Only handle messages that are actually forwarded (incl. automatic forwards)
+            if not is_fwd and not forward_from_chat and not forward_origin:
+                logger.info("Forward handler: message not detected as forwarded, ignoring")
                 return
 
             text = text_for_logging
@@ -851,13 +879,11 @@ class FactCheckBot:
                 text = await self._ocr_extract(message)
             logger.info("Forward handler: extracted text length %d", len(text))
 
-            forward_username = (
-                forward_from.username.lstrip("@").lower()
-                if forward_from and getattr(forward_from, "username", None)
-                else None
+            normalized_username = (
+                forward_username.lstrip("@").lower() if forward_username else None
             )
-            logger.info("Forward handler: normalized username=%s", forward_username)
-            if forward_username and self.db_manager:
+            logger.info("Forward handler: normalized username=%s", normalized_username)
+            if normalized_username and self.db_manager:
                 try:
                     raw_sources = await self.db_manager.get_news_channel_usernames()
                     known_sources = {name.lstrip("@").lower() for name in raw_sources}
@@ -867,20 +893,20 @@ class FactCheckBot:
                 except Exception:
                     known_sources = set()
                     logger.exception("Forward handler: failed to load news channel list")
-                if forward_username in known_sources:
+                if normalized_username in known_sources:
                     logger.info(
                         "Forward handler: channel %s recognized, triggering news check",
-                        forward_username,
+                        normalized_username,
                     )
                     await self._run_check(update, ctx, text, track="news")
                     return
                 logger.info(
-                    "Forward handler: channel %s not in news channel list", forward_username
+                    "Forward handler: channel %s not in news channel list", normalized_username
                 )
             else:
                 logger.info(
                     "Forward handler: skipping news channel check (username=%s, db_manager=%s)",
-                    forward_username,
+                    normalized_username,
                     bool(self.db_manager),
                 )
             cfg = self.cfg_reader(update.effective_chat.id)
@@ -963,6 +989,10 @@ class FactCheckBot:
                         chat.id,
                         user.id,
                         message.message_id,
+                    )
+                    # Mirror DB logging to terminal for visibility
+                    print(
+                        f"LOGGED-FWD chat={chat.id} user={user.username or user.id} msg={message.message_id}"
                     )
                 except Exception as exc:
                     logger.error(
