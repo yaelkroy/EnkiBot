@@ -290,7 +290,10 @@ def is_media_link_only(text: str, extra_allow_len: int = 16) -> bool:
     if not urls:
         return False
     domains = _extract_domains(urls)
-    if not domains or not all(any(dom.endsWith(md) or dom == md for md in MEDIA_DOMAINS) for dom in domains):
+    if not domains:
+        return False
+    # Every domain must be a known media domain
+    if not all(any(d == md or d.endswith(md) for md in MEDIA_DOMAINS) for d in domains):
         return False
     # Remove URLs and measure leftover text length
     text_wo = URL_RE.sub(" ", text)
@@ -579,6 +582,26 @@ class FactChecker:
                 sources=filtered_sources,
             )
 
+        # If we have at least 1 but fewer than the confirmation threshold domains, mark as low confidence / needs context
+        min_required = getattr(config, "FACTCHECK_CONFIRMATION_THRESHOLD", 3)
+        if 0 < len(distinct_domains) < min_required:
+            # Build a concise doubtful summary in the original claim language if possible
+            links_part = ", ".join(sorted(distinct_domains))
+            doubtful_templates = {
+                "en": f"Only {len(distinct_domains)} independent source(s) found: {links_part}. Treat this news as unconfirmed.",
+                "ru": f"Найдено только {len(distinct_domains)} независим. источн.: {links_part}. Новость требует подтверждения.",
+                "uk": f"Знайдено лише {len(distinct_domains)} незалежн. джерел: {links_part}. Потрібне підтвердження.",
+            }
+            # Choose template based on detected claim lang, fallback to English
+            lang_key = (claim.lang or "").lower()
+            summary_txt = doubtful_templates.get(lang_key, doubtful_templates["en"])
+            return Verdict(
+                label="needs_context",
+                confidence=0.4,
+                summary=summary_txt,
+                sources=filtered_sources,
+            )
+
         # Otherwise, ask the model to synthesize a short textual explanation (no JSON) with the web tool enabled
         ctx_lines = [f"- {e.domain}: {e.url}" for e in sources[:5]]
         ctx_block = ("\n\nContext sources (for your reference):\n" + "\n".join(ctx_lines)) if ctx_lines else ""
@@ -724,7 +747,7 @@ class FactCheckBot:
         app: Application,
         fc: FactChecker,
         satire_detector: Optional[SatireDetector] = None,
-        news_gate: Optional[NewsGate] = None,
+        news_gate: Optional[QuoteGate] = None,
         quote_gate: Optional[QuoteGate] = None,
         cfg_reader: Callable[[int], Dict[str, object]] | None = None,
         db_manager: Optional[DatabaseManager] = None,
@@ -811,29 +834,27 @@ class FactCheckBot:
         try:
             negative_labels = {"false", "misleading_media"}
             positive_labels = {"true", "mostly_true"}
+            shrug_labels = {"needs_context"}
             if label in positive_labels:
                 await target_msg.set_reaction("👍")
-                # Do not send a message body for positive confirmations
             elif label in negative_labels:
                 await target_msg.set_reaction("👎")
-                if verdict.summary:
-                    try:
-                        await target_msg.reply_text(verdict.summary, disable_web_page_preview=True)
-                    except BadRequest as br:
-                        if "replied not found" in str(br).lower() or "message to be replied not found" in str(br).lower():
-                            await update.effective_chat.send_message(verdict.summary)
-                        else:
-                            raise
-            else:
-                # needs_context, unverified, opinion -> send a short text if available
-                if verdict.summary:
-                    try:
-                        await target_msg.reply_text(verdict.summary, disable_web_page_preview=True)
-                    except BadRequest as br:
-                        if "replied not found" in str(br).lower() or "message to be replied not found" in str(br).lower():
-                            await update.effective_chat.send_message(verdict.summary)
-                        else:
-                            raise
+            elif label in shrug_labels:
+                try:
+                    await target_msg.set_reaction("🤷")
+                except Exception:
+                    await target_msg.set_reaction("🟡")
+            # Message body rules
+            if label in positive_labels:
+                pass  # no text
+            elif verdict.summary:
+                try:
+                    await target_msg.reply_text(verdict.summary, disable_web_page_preview=True)
+                except BadRequest as br:
+                    if "replied not found" in str(br).lower() or "message to be replied not found" in str(br).lower():
+                        await update.effective_chat.send_message(verdict.summary)
+                    else:
+                        raise
         except Exception:
             if label not in {"true", "mostly_true"} and verdict.summary:
                 try:
