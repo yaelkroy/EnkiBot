@@ -290,7 +290,7 @@ def is_media_link_only(text: str, extra_allow_len: int = 16) -> bool:
     if not urls:
         return False
     domains = _extract_domains(urls)
-    if not domains or not all(any(dom.endswith(md) or dom == md for md in MEDIA_DOMAINS) for dom in domains):
+    if not domains or not all(any(dom.endsWith(md) or dom == md for md in MEDIA_DOMAINS) for dom in domains):
         return False
     # Remove URLs and measure leftover text length
     text_wo = URL_RE.sub(" ", text)
@@ -432,6 +432,64 @@ class OpenAIWebFetcher(Fetcher):
             )
             if len(evidences) >= 8:
                 break
+        # If less than desired sources (e.g., <3), attempt a second broadened search (simple heuristic)
+        if len(evidences) < 3:
+            try:
+                # Broaden by removing trailing clauses after dash/colon to form a more general query
+                base_query = re.split(r"[-–—:\u2014]", claim.text_norm, maxsplit=1)[0].strip()
+                if len(base_query) > 20 and base_query.lower() != claim.text_norm.lower():
+                    resp2 = await client.responses.create(
+                        model=getattr(config, "OPENAI_DEEP_RESEARCH_MODEL_ID", "gpt-4o-mini"),
+                        tools=[{"type": "web_search"}],
+                        tool_choice="auto",
+                        instructions=(
+                            "Search the web for the claim and return ONLY JSON as {\"items\": ["
+                            "{\"url\": string, \"title\": string}...]]}"
+                        ),
+                        input=base_query,
+                        **extra,
+                    )
+                    text2 = (getattr(resp2, "output_text", "") or "").strip()
+                    items2: List[Dict[str, str]] = []
+                    if text2.startswith("{"):
+                        try:
+                            data2 = json.loads(text2)
+                            items2 = data2.get("items", []) or []
+                        except Exception:
+                            items2 = []
+                    if not items2 and text2:
+                        url_candidates2 = re.findall(r"https?://[^\s)]+", text2)
+                        for u in url_candidates2:
+                            items2.append({"url": u, "title": ""})
+                    for item in items2:
+                        url = item.get("url")
+                        if not url:
+                            continue
+                        domain = (urlparse(url).netloc or url).lower()
+                        base_domain = domain.split(':')[0]
+                        if base_domain in getattr(config, "FACTCHECK_DOMAIN_BLOCKLIST", set()):
+                            continue
+                        if base_domain in seen:
+                            continue
+                        seen.add(base_domain)
+                        title = item.get("title", "")
+                        evidences.append(
+                            Evidence(
+                                url=url,
+                                domain=base_domain,
+                                stance="support",
+                                note=title or base_domain,
+                                published_at=None,
+                                snapshot_url=None,
+                                tier=None,
+                                score=1.0,
+                            )
+                        )
+                        print(f"WEB-LINK-EXTRA {base_domain} -> {url}")
+                        if len(evidences) >= 8:
+                            break
+            except Exception as e:
+                logger.error(f"Secondary broadened search failed: {e}")
         return evidences
 
 
@@ -591,6 +649,9 @@ class FactChecker:
                 if web_hits:
                     top_domains = ", ".join({e.domain for e in web_hits[:3]})
                     print(f"WEB-DOMAINS {top_domains}")
+                    # Show full links for transparency
+                    for ev in web_hits[:8]:
+                        print(f"WEB-LINK {ev.domain} -> {ev.url}")
             except Exception as e:
                 err = str(e)
                 logger.error("Research: web fetcher error: %s", err, exc_info=True)
@@ -663,7 +724,7 @@ class FactCheckBot:
         app: Application,
         fc: FactChecker,
         satire_detector: Optional[SatireDetector] = None,
-        news_gate: Optional[QuoteGate] = None,
+        news_gate: Optional[NewsGate] = None,
         quote_gate: Optional[QuoteGate] = None,
         cfg_reader: Callable[[int], Dict[str, object]] | None = None,
         db_manager: Optional[DatabaseManager] = None,
@@ -808,7 +869,7 @@ class FactCheckBot:
         text_for_logging = get_text(message) or ""
         # Terminal mirror of the forward
         print(
-            f"FORWARDED chat={getattr(chat,'id',None)} user={getattr(user,'username',None) or getattr(user,'id',None)} "
+            f"FORWARDED chat={getattr(chat,'id',None)} name={(getattr(chat,'title',None) or getattr(chat,'username',None) or '').replace(' |',' ').strip()} user={getattr(user,'username',None) or getattr(user,'id',None)} "
             f"msg={getattr(message,'message_id',None)} from={src_username or src_title or 'unknown'} "
             f"auto={getattr(message,'is_automatic_forward', None)} | {text_for_logging[:140].replace('\n',' ')}"
         )
