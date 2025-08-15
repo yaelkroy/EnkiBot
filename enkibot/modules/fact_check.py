@@ -363,6 +363,28 @@ class OpenAIWebFetcher(Fetcher):
     async def fact_checker_search(self, claim: Claim) -> List[Evidence]:
         return await self.general_search(claim)
 
+    def _sanitize_tracking(self, url: str) -> str:
+        try:
+            from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+            p = urlparse(url)
+            if not p.query:
+                return url
+            # Drop tracking params (utm_*, ref, referrer, fbclid, gclid) and the specific openai source tag
+            allowed = []
+            for k, v in parse_qsl(p.query, keep_blank_values=True):
+                lk = k.lower()
+                if lk.startswith("utm_") or lk in {"ref", "referrer", "fbclid", "gclid", "utm_source"}:
+                    continue
+                # Also skip if value explicitly 'openai'
+                if v.lower() == "openai":
+                    continue
+                allowed.append((k, v))
+            new_query = urlencode(allowed, doseq=True)
+            cleaned = urlunparse((p.scheme, p.netloc, p.path, p.params, new_query, p.fragment))
+            return cleaned
+        except Exception:
+            return url.split("?utm_source=openai")[0]
+
     async def general_search(self, claim: Claim) -> List[Evidence]:
         logger.debug("Web fetcher: starting search for claim '%s'", claim.text_norm)
         if not getattr(config, "OPENAI_API_KEY", None):
@@ -379,14 +401,17 @@ class OpenAIWebFetcher(Fetcher):
                 extra["user_location"] = {"country": config.OPENAI_SEARCH_USER_LOCATION}
         items: List[Dict[str, str]] = []
         try:
-            # Ask the model to search and return ranked JSON items with stance when possible
+            # Instruct model to prioritize trustworthy, independent, diverse sources
             resp = await client.responses.create(
                 model=getattr(config, "OPENAI_DEEP_RESEARCH_MODEL_ID", "gpt-4o-mini"),
                 tools=[{"type": "web_search"}],
                 tool_choice="auto",
                 instructions=(
-                    "Search the web for the claim and return ONLY JSON as {\"items\": ["
-                    "{\"url\": string, \"title\": string}...]]}"
+                    "Search the web for the claim. Return ONLY JSON as {\"items\": [ {\"url\": string, \"title\": string} ... ]}. "
+                    "Prioritize authoritative, high-credibility, mutually independent sources: international news agencies (Reuters, AP, AFP, Bloomberg, APNews), "
+                    "major reputable newspapers (NYTimes, WSJ, WashingtonPost, Guardian, BBC), recognized regional agencies (TASS, RIA), official government/statistical portals (.gov, .gob., .gov.xx), "
+                    "IGO / NGO / health / academic and peer‑review (.int, un.org, who.int, oecd.org, worldbank.org, imf.org, etc.), and respected scientific / educational domains (.edu, .ac.). "
+                    "Avoid low-quality blogs, SEO spam, content farms, unverified social media mirrors, or duplicate re-publishes. Prefer diversity of domains. Limit to top 12 distinct domains ranked by credibility & direct relevance."
                 ),
                 input=claim.text_norm,
                 **extra,
@@ -405,22 +430,79 @@ class OpenAIWebFetcher(Fetcher):
         except Exception as e:
             logger.error("Web fetcher: search failed: %s", e, exc_info=True)
             return []
-        evidences: List[Evidence] = []
-        # Rank and dedupe by domain
-        seen = set()
-        for item in items:
-            url = item.get("url")
+
+        # Sanitize tracking parameters early
+        for it in items:
+            if "url" in it and it["url"]:
+                it["url"] = self._sanitize_tracking(it["url"])  # remove utm / tracking
+
+        # Trust scoring & re-ranking
+        TRUST_BASE: Dict[str, float] = {
+            # International agencies
+            "reuters.com": 1.0,
+            "apnews.com": 0.98,
+            "bloomberg.com": 0.97,
+            "afp.com": 0.95,
+            # Major media
+            "bbc.com": 0.96,
+            "nytimes.com": 0.95,
+            "washingtonpost.com": 0.94,
+            "theguardian.com": 0.93,
+            "ft.com": 0.93,
+            "wsj.com": 0.93,
+            # International orgs / health / finance
+            "un.org": 0.99,
+            "who.int": 0.99,
+            "worldbank.org": 0.98,
+            "imf.org": 0.97,
+            "oecd.org": 0.97,
+            # Russian / regional agencies (include but slightly lower)
+            "tass.ru": 0.85,
+            "ria.ru": 0.83,
+            "interfax.ru": 0.82,
+        }
+
+        def domain_score(d: str) -> float:
+            base = TRUST_BASE.get(d, 0.0)
+            # Heuristic boosts
+            if d.endswith(".gov") or ".gov." in d:
+                base = max(base, 0.9)
+            if d.endswith(".edu") or ".edu." in d or ".ac." in d:
+                base = max(base, 0.88)
+            if d.endswith(".int"):
+                base = max(base, 0.95)
+            # Penalize obvious low-quality patterns
+            if any(pat in d for pat in ["blogspot", "wordpress", "weebly", "medium.com/@"]):
+                base = min(base, 0.25)
+            return base
+
+        ranked: List[Dict[str, str]] = []
+        seen_domains: set[str] = set()
+        for it in items:
+            url = it.get("url")
             if not url:
                 continue
-            domain = (urlparse(url).netloc or url).lower()
-            # Skip blocked domains (e.g., t.me)
-            base_domain = domain.split(':')[0]
+            dom = (urlparse(url).netloc or url).lower().split(":")[0]
+            if dom.startswith("www."):
+                dom = dom[4:]
+            if dom in seen_domains:
+                continue  # enforce domain diversity
+            seen_domains.add(dom)
+            it["_domain"] = dom
+            it["_score"] = domain_score(dom)
+            ranked.append(it)
+        ranked.sort(key=lambda r: (-r.get("_score", 0.0), len(r.get("title", ""))))
+
+        evidences: List[Evidence] = []
+        for it in ranked[:12]:
+            url = it.get("url")
+            if not url:
+                continue
+            dom = it.get("_domain", "")
+            title = it.get("title", "")
+            base_domain = dom.split(':')[0]
             if base_domain in getattr(config, "FACTCHECK_DOMAIN_BLOCKLIST", set()):
                 continue
-            if base_domain in seen:
-                continue
-            seen.add(base_domain)
-            title = item.get("title", "")
             evidences.append(
                 Evidence(
                     url=url,
@@ -430,69 +512,11 @@ class OpenAIWebFetcher(Fetcher):
                     published_at=None,
                     snapshot_url=None,
                     tier=None,
-                    score=1.0,
+                    score=float(it.get("_score", 0.0)) or 1.0,
                 )
             )
             if len(evidences) >= 8:
                 break
-        # If less than desired sources (e.g., <3), attempt a second broadened search (simple heuristic)
-        if len(evidences) < 3:
-            try:
-                # Broaden by removing trailing clauses after dash/colon to form a more general query
-                base_query = re.split(r"[-–—:\u2014]", claim.text_norm, maxsplit=1)[0].strip()
-                if len(base_query) > 20 and base_query.lower() != claim.text_norm.lower():
-                    resp2 = await client.responses.create(
-                        model=getattr(config, "OPENAI_DEEP_RESEARCH_MODEL_ID", "gpt-4o-mini"),
-                        tools=[{"type": "web_search"}],
-                        tool_choice="auto",
-                        instructions=(
-                            "Search the web for the claim and return ONLY JSON as {\"items\": ["
-                            "{\"url\": string, \"title\": string}...]]}"
-                        ),
-                        input=base_query,
-                        **extra,
-                    )
-                    text2 = (getattr(resp2, "output_text", "") or "").strip()
-                    items2: List[Dict[str, str]] = []
-                    if text2.startswith("{"):
-                        try:
-                            data2 = json.loads(text2)
-                            items2 = data2.get("items", []) or []
-                        except Exception:
-                            items2 = []
-                    if not items2 and text2:
-                        url_candidates2 = re.findall(r"https?://[^\s)]+", text2)
-                        for u in url_candidates2:
-                            items2.append({"url": u, "title": ""})
-                    for item in items2:
-                        url = item.get("url")
-                        if not url:
-                            continue
-                        domain = (urlparse(url).netloc or url).lower()
-                        base_domain = domain.split(':')[0]
-                        if base_domain in getattr(config, "FACTCHECK_DOMAIN_BLOCKLIST", set()):
-                            continue
-                        if base_domain in seen:
-                            continue
-                        seen.add(base_domain)
-                        title = item.get("title", "")
-                        evidences.append(
-                            Evidence(
-                                url=url,
-                                domain=base_domain,
-                                stance="support",
-                                note=title or base_domain,
-                                published_at=None,
-                                snapshot_url=None,
-                                tier=None,
-                                score=1.0,
-                            )
-                        )
-                        print(f"WEB-LINK-EXTRA {base_domain} -> {url}")
-                        if len(evidences) >= 8:
-                            break
-            except Exception as e:
-                logger.error(f"Secondary broadened search failed: {e}")
         return evidences
 
 
