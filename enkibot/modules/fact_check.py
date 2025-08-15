@@ -236,7 +236,7 @@ class NewsGate:
 
 
 class QuoteGate:
-    def __init__(self) -> None:
+    def __init(self) -> None:
         # Require two or more words inside quotes
         self.quote_re = re.compile(r"[\"«](?:(?![\"»]).)*\s+(?:(?![\"»]).)+[\"»]")
         self.marker_keywords = ["как писал", "as", "wrote", "писал", "said", "\u2014"]
@@ -327,7 +327,7 @@ def sanitize_for_search(s: str) -> str:
     s = re.sub(r"[\u0000-\u001F\u007F]", " ", s)
     s = s.strip()
     # Strip paired quotes around entire string
-    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+    if (s.startswith('"') and s.endswith('"')) or (s.startsWith("'") and s.endswith("'")):
         s = s[1:-1].strip()
     # Allow only letters/digits/underscore and a small set of punctuation
     s = re.sub(r"[^\w\s\.,:;!\?()\-/%+]", " ", s, flags=re.UNICODE)
@@ -361,11 +361,159 @@ class Fetcher:
 
 class OpenAIWebFetcher(Fetcher):
     def __init__(self) -> None:
-        # cache original_url -> cleaned_url to avoid repeated parsing
+        # cache original_url -> cleaned_url to avoid repeated parsing (in-memory)
         self._url_sanitize_cache: Dict[str, str] = {}
+        self._cache_dirty = False
+        self._cache_path = getattr(config, 'FACTCHECK_URL_CACHE_PATH', None)
+        self._cache_max = getattr(config, 'FACTCHECK_URL_CACHE_MAX_SIZE', 5000)
+        self._persist_interval = getattr(config, 'FACTCHECK_URL_CACHE_PERSIST_INTERVAL_SEC', 300)
+        self._last_persist_ts = 0.0
+        self._bg_task = None  # background asyncio Task for persistence
+        self._shutdown = False
+        self._load_cache_from_disk()
+        self._init_signal_handlers()
+        self._start_background_loop()
+
+    # Public helper to flush cache on demand (e.g., admin command)
+    def flush_cache(self) -> int:
+        before = len(self._url_sanitize_cache)
+        self._persist_cache_force()
+        return before
+
+    # ---------------- Persistence / lifecycle -----------------
+    def _init_signal_handlers(self) -> None:
+        try:
+            import signal, atexit
+            # Register atexit fallback
+            atexit.register(self._persist_cache_force)
+            # Graceful signal handlers (only set if not already set to avoid clobber)
+            for sig_name in ('SIGINT', 'SIGTERM'):
+                if hasattr(signal, sig_name):
+                    sig = getattr(signal, sig_name)
+                    prev = signal.getsignal(sig)
+                    if prev is None or prev == signal.SIG_DFL:
+                        def _handler(signum, frame, self_ref=self):  # type: ignore
+                            try:
+                                logger.info("FactCheck URL cache: signal %s received, forcing flush", signum)
+                                self_ref._persist_cache_force()
+                            finally:
+                                # Re-raise default behaviour
+                                signal.signal(signum, signal.SIG_DFL)
+                                try:
+                                    import os
+                                    os.kill(os.getpid(), signum)
+                                except Exception:
+                                    pass
+                        signal.signal(sig, _handler)
+        except Exception:
+            pass
+
+    def _start_background_loop(self) -> None:
+        # Launch periodic async flush loop (best effort)
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                self._bg_task = loop.create_task(self._background_persist_loop())
+        except Exception:
+            pass
+
+    async def _background_persist_loop(self) -> None:
+        import asyncio, time
+        while not self._shutdown:
+            try:
+                await asyncio.sleep(self._persist_interval)
+                if self._cache_dirty:
+                    logger.info("FactCheck URL cache: background flush starting (dirty=%s entries=%d)", True, len(self._url_sanitize_cache))
+                    self._persist_cache_if_needed()
+                    self._last_persist_ts = time.time()
+            except asyncio.CancelledError:
+                break
+            except Exception as ex:
+                logger.warning("FactCheck URL cache: background loop error: %s", ex)
+                continue
+        # Final flush on exit of loop
+        try:
+            if self._cache_dirty:
+                logger.info("FactCheck URL cache: final flush on loop exit (entries=%d)", len(self._url_sanitize_cache))
+                self._persist_cache_if_needed()
+        except Exception as ex:
+            logger.warning("FactCheck URL cache: final flush failed: %s", ex)
+
+    def shutdown(self) -> None:
+        # Public method to request graceful shutdown & flush
+        self._shutdown = True
+        try:
+            if self._bg_task and not self._bg_task.done():
+                self._bg_task.cancel()
+        except Exception:
+            pass
+        self._persist_cache_force()
+
+    def _persist_cache_force(self) -> None:
+        try:
+            if self._cache_dirty:
+                logger.info("FactCheck URL cache: force flush (entries=%d)", len(self._url_sanitize_cache))
+                self._persist_cache_if_needed()
+        except Exception as ex:
+            logger.warning("FactCheck URL cache: force flush failed: %s", ex)
+
+    # ----------------------------------------------------------
+
+    def _load_cache_from_disk(self) -> None:
+        if not self._cache_path:
+            return
+        try:
+            import json, os
+            if os.path.isfile(self._cache_path):
+                with open(self._cache_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    # Keep only str->str entries
+                    for k, v in list(data.items())[: self._cache_max]:
+                        if isinstance(k, str) and isinstance(v, str):
+                            self._url_sanitize_cache[k] = v
+                logger.info(f"FactCheck URL cache loaded: {len(self._url_sanitize_cache)} entries")
+        except Exception as e:
+            logger.warning(f"Failed to load factcheck URL cache: {e}")
+
+    def _persist_cache_if_needed(self) -> None:
+        if not self._cache_dirty or not self._cache_path:
+            return
+        try:
+            import json, os, tempfile, time
+            # Trim if exceeds max size (simple oldest removal via dict iteration order)
+            if len(self._url_sanitize_cache) > self._cache_max:
+                excess = len(self._url_sanitize_cache) - self._cache_max
+                logger.info("FactCheck URL cache: trimming %d oldest entries (before=%d max=%d)", excess, len(self._url_sanitize_cache), self._cache_max)
+                for _ in range(excess):
+                    self._url_sanitize_cache.pop(next(iter(self._url_sanitize_cache)))
+            tmp_fd, tmp_path = tempfile.mkstemp(prefix='fcurlcache_', suffix='.json', dir=os.path.dirname(self._cache_path) or None)
+            try:
+                with open(tmp_fd, 'w', encoding='utf-8') as f:
+                    json.dump(self._url_sanitize_cache, f, ensure_ascii=False)
+                os.replace(tmp_path, self._cache_path)
+                self._cache_dirty = False
+                logger.info("FactCheck URL cache: flushed %d entries to %s", len(self._url_sanitize_cache), self._cache_path)
+            except Exception:
+                try: os.unlink(tmp_path)
+                except Exception: pass
+                raise
+        except Exception as e:
+            logger.warning(f"Failed to persist factcheck URL cache: {e}")
 
     async def fact_checker_search(self, claim: Claim) -> List[Evidence]:
-        return await self.general_search(claim)
+        res = await self.general_search(claim)
+        # Periodic persistence based on interval instead of each call
+        try:
+            import time
+            now = time.time()
+            if self._cache_dirty and (now - self._last_persist_ts) >= self._persist_interval:
+                self._persist_cache_if_needed()
+                self._last_persist_ts = now
+        except Exception:
+            pass
+        return res
 
     def _sanitize_tracking(self, url: str) -> str:
         cached = self._url_sanitize_cache.get(url)
@@ -376,163 +524,120 @@ class OpenAIWebFetcher(Fetcher):
             p = urlparse(url)
             if not p.query:
                 self._url_sanitize_cache[url] = url
+                self._cache_dirty = True
                 return url
             patterns = getattr(config, 'FACTCHECK_TRACKING_PARAM_BLOCKLIST', [])
-            wildcard = [pat[:-1] for pat in patterns if pat.endswith('*')]
-            exact = {pat for pat in patterns if not pat.endswith('*')}
+            wildcard = [pat[:-1] for pat in patterns if pat.endsWith('*')]
+            exact = {pat for pat in patterns if not pat.endsWith('*')}
             allowed = []
             for k, v in parse_qsl(p.query, keep_blank_values=True):
                 lk = k.lower(); drop = False
-                if lk in exact:
-                    drop = True
+                if lk in exact: drop = True
                 else:
                     for pref in wildcard:
-                        if lk.startswith(pref):
-                            drop = True; break
-                if v.lower() == 'openai':
-                    drop = True
-                if not drop:
-                    allowed.append((k, v))
+                        if lk.startswith(pref): drop = True; break
+                if v.lower() == 'openai': drop = True
+                if not drop: allowed.append((k, v))
             new_query = urlencode(allowed, doseq=True)
             cleaned = urlunparse((p.scheme, p.netloc, p.path, p.params, new_query, p.fragment))
         except Exception:
             cleaned = url.split('?utm_source=openai')[0]
         self._url_sanitize_cache[url] = cleaned
+        self._cache_dirty = True
         return cleaned
 
-    async def general_search(self, claim: Claim) -> List[Evidence]:
+    async def general_search(self, claim: Claim) -> List[Evidence]:  # restored method
         logger.debug("Web fetcher: starting search for claim '%s'", claim.text_norm)
-        if not getattr(config, "OPENAI_API_KEY", None):
-            logger.warning("Web fetcher: OPENAI_API_KEY missing, skipping web search")
+        if not getattr(config, 'OPENAI_API_KEY', None):
+            logger.warning('Web fetcher: OPENAI_API_KEY missing, skipping web search')
             return []
         client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY)
         extra: Dict[str, object] = {}
-        if getattr(config, "OPENAI_SEARCH_CONTEXT_SIZE", None):
-            extra["search_context_size"] = config.OPENAI_SEARCH_CONTEXT_SIZE
-        if getattr(config, "OPENAI_SEARCH_USER_LOCATION", None):
+        if getattr(config, 'OPENAI_SEARCH_CONTEXT_SIZE', None):
+            extra['search_context_size'] = config.OPENAI_SEARCH_CONTEXT_SIZE
+        if getattr(config, 'OPENAI_SEARCH_USER_LOCATION', None):
             try:
-                extra["user_location"] = json.loads(config.OPENAI_SEARCH_USER_LOCATION)
+                extra['user_location'] = json.loads(config.OPENAI_SEARCH_USER_LOCATION)
             except Exception:
-                extra["user_location"] = {"country": config.OPENAI_SEARCH_USER_LOCATION}
+                extra['user_location'] = {'country': config.OPENAI_SEARCH_USER_LOCATION}
         items: List[Dict[str, str]] = []
         try:
-            # Instruct model to prioritize trustworthy, independent, diverse sources
             resp = await client.responses.create(
-                model=getattr(config, "OPENAI_DEEP_RESEARCH_MODEL_ID", "gpt-4o-mini"),
-                tools=[{"type": "web_search"}],
-                tool_choice="auto",
+                model=getattr(config, 'OPENAI_DEEP_RESEARCH_MODEL_ID', 'gpt-4o-mini'),
+                tools=[{'type': 'web_search'}],
+                tool_choice='auto',
                 instructions=(
-                    "Search the web for the claim. Return ONLY JSON as {\"items\": [ {\"url\": string, \"title\": string} ... ]}. "
-                    "Prioritize authoritative, high-credibility, mutually independent sources: international news agencies (Reuters, AP, AFP, Bloomberg, APNews), "
-                    "major reputable newspapers (NYTimes, WSJ, WashingtonPost, Guardian, BBC), recognized regional agencies (TASS, RIA), official government/statistical portals (.gov, .gob., .gov.xx), "
-                    "IGO / NGO / health / academic and peer‑review (.int, un.org, who.int, oecd.org, worldbank.org, imf.org, etc.), and respected scientific / educational domains (.edu, .ac.). "
-                    "Avoid low-quality blogs, SEO spam, content farms, unverified social media mirrors, or duplicate re-publishes. Prefer diversity of domains. Limit to top 12 distinct domains ranked by credibility & direct relevance."
+                    'Search the web for the claim. Return ONLY JSON as {"items": [ {"url": string, "title": string} ... ]}. '
+                    'Prioritize authoritative, high-credibility, mutually independent sources: international news agencies (Reuters, AP, AFP, Bloomberg, APNews), '
+                    'major reputable newspapers (NYTimes, WSJ, WashingtonPost, Guardian, BBC), recognized regional agencies (TASS, RIA), official government/statistical portals (.gov, .gob., .gov.xx), '
+                    'IGO / NGO / health / academic and peer‑review (.int, un.org, who.int, oecd.org, worldbank.org, imf.org, etc.), and respected scientific / educational domains (.edu, .ac.). '
+                    'Avoid low-quality blogs, SEO spam, content farms, unverified social media mirrors, or duplicate re-publishes. Prefer diversity of domains. Limit to top 12 distinct domains ranked by credibility & direct relevance.'
                 ),
                 input=claim.text_norm,
                 **extra,
             )
-            text = (getattr(resp, "output_text", "") or "").strip()
-            if text.startswith("{"):
+            text = (getattr(resp, 'output_text', '') or '').strip()
+            if text.startswith('{'):
                 try:
                     data = json.loads(text)
-                    items = data.get("items", []) or []
+                    items = data.get('items', []) or []
                 except Exception:
                     items = []
             if not items and text:
-                url_candidates = re.findall(r"https?://[^\s)]+", text)
-                for u in url_candidates:
-                    items.append({"url": u, "title": ""})
+                for u in re.findall(r'https?://[^\s)]+', text):
+                    items.append({'url': u, 'title': ''})
         except Exception as e:
-            logger.error("Web fetcher: search failed: %s", e, exc_info=True)
+            logger.error('Web fetcher: search failed: %s', e, exc_info=True)
             return []
 
-        # Sanitize + hash-based dedupe of cleaned URLs
-        seen_url_hashes: set[str] = set()
-        cleaned_items: List[Dict[str, str]] = []
+        # Sanitize + hash-dedupe
+        seen_url_hashes: set[str] = set(); cleaned_items: List[Dict[str, str]] = []
         for it in items:
-            raw = it.get("url")
-            if not raw:
-                continue
+            raw = it.get('url');
+            if not raw: continue
             cleaned = self._sanitize_tracking(raw)
             h = hashlib.sha256(cleaned.encode('utf-8')).hexdigest()
-            if h in seen_url_hashes:
-                continue
+            if h in seen_url_hashes: continue
             seen_url_hashes.add(h)
-            it["url"] = cleaned
-            it["_url_hash"] = h
+            it['url'] = cleaned; it['_url_hash'] = h
             cleaned_items.append(it)
         items = cleaned_items
 
         TRUST_BASE: Dict[str, float] = {
-            # International agencies
-            "reuters.com": 1.0,
-            "apnews.com": 0.98,
-            "bloomberg.com": 0.97,
-            "afp.com": 0.95,
-            # Major media
-            "bbc.com": 0.96,
-            "nytimes.com": 0.95,
-            "washingtonpost.com": 0.94,
-            "theguardian.com": 0.93,
-            "ft.com": 0.93,
-            "wsj.com": 0.93,
-            # International orgs / health / finance
-            "un.org": 0.99,
-            "who.int": 0.99,
-            "worldbank.org": 0.98,
-            "imf.org": 0.97,
-            "oecd.org": 0.97,
-            # Russian / regional agencies (include but slightly lower)
-            "tass.ru": 0.85,
-            "ria.ru": 0.83,
-            "interfax.ru": 0.82,
+            'reuters.com': 1.0, 'apnews.com': 0.98, 'bloomberg.com': 0.97, 'afp.com': 0.95,
+            'bbc.com': 0.96, 'nytimes.com': 0.95, 'washingtonpost.com': 0.94, 'theguardian.com': 0.93,
+            'ft.com': 0.93, 'wsj.com': 0.93, 'un.org': 0.99, 'who.int': 0.99, 'worldbank.org': 0.98,
+            'imf.org': 0.97, 'oecd.org': 0.97, 'tass.ru': 0.85, 'ria.ru': 0.83, 'interfax.ru': 0.82,
         }
-
         def domain_score(d: str) -> float:
             base = TRUST_BASE.get(d, 0.0)
-            # Heuristic boosts
-            if d.endswith(".gov") or ".gov." in d:
-                base = max(base, 0.9)
-            if d.endswith(".edu") or ".edu." in d or ".ac." in d:
-                base = max(base, 0.88)
-            if d.endswith(".int"):
-                base = max(base, 0.95)
-            # Penalize obvious low-quality patterns
-            if any(pat in d for pat in ["blogspot", "wordpress", "weebly", "medium.com/@"]):
-                base = min(base, 0.25)
+            if d.endswith('.gov') or '.gov.' in d: base = max(base, 0.9)
+            if d.endswith('.edu') or '.edu.' in d or '.ac.' in d: base = max(base, 0.88)
+            if d.endswith('.int'): base = max(base, 0.95)
+            if any(pat in d for pat in ['blogspot', 'wordpress', 'weebly', 'medium.com/@']): base = min(base, 0.25)
             return base
 
-        ranked: List[Dict[str, str]] = []
-        seen_domains: set[str] = set()
+        ranked: List[Dict[str, str]] = []; seen_domains: set[str] = set()
         for it in items:
-            url = it.get("url")
+            url = it.get('url');
             if not url: continue
-            dom = (urlparse(url).netloc or url).lower().split(":")[0]
-            if dom.startswith("www."): dom = dom[4:]
+            dom = (urlparse(url).netloc or url).lower().split(':')[0]
+            if dom.startswith('www.'): dom = dom[4:]
             if dom in seen_domains: continue
             seen_domains.add(dom)
-            it["_domain"] = dom
-            it["_score"] = domain_score(dom)
+            it['_domain'] = dom; it['_score'] = domain_score(dom)
             ranked.append(it)
-        ranked.sort(key=lambda r: (-r.get("_score", 0.0), len(r.get("title", ""))))
+        ranked.sort(key=lambda r: (-r.get('_score', 0.0), len(r.get('title', ''))))
 
         evidences: List[Evidence] = []
+        blocked = getattr(config, 'FACTCHECK_DOMAIN_BLOCKLIST', set())
         for it in ranked[:12]:
-            url = it.get("url"); dom = it.get("_domain", ""); title = it.get("title", "")
+            url = it.get('url'); dom = it.get('_domain', ''); title = it.get('title', '')
             if not url: continue
-            base_domain = dom.split(':')[0]
-            if base_domain in getattr(config, "FACTCHECK_DOMAIN_BLOCKLIST", set()):
-                continue
-            evidences.append(Evidence(
-                url=url,
-                domain=base_domain,
-                stance="support",
-                note=title or base_domain,
-                published_at=None,
-                snapshot_url=None,
-                tier=None,
-                score=float(it.get("_score", 0.0)) or 1.0,
-            ))
+            if dom in blocked: continue
+            evidences.append(Evidence(url=url, domain=dom, stance='support', note=title or dom,
+                                      published_at=None, snapshot_url=None, tier=None,
+                                      score=float(it.get('_score', 0.0)) or 1.0))
             if len(evidences) >= 8: break
         return evidences
 
@@ -805,6 +910,7 @@ class FactCheckBot:
 
     def register(self) -> None:
         self.app.add_handler(CommandHandler("factcheck", self.cmd_factcheck))
+        self.app.add_handler(CommandHandler("factcacheflush", self.cmd_factcacheflush))
         self.app.add_handler(MessageHandler(filters.FORWARDED & TEXT_OR_CAPTION, self.on_forward), group=-1)
         # Safety net for older PTB versions where Caption filter may not fire for media
         try:
@@ -827,6 +933,26 @@ class FactCheckBot:
             text = " ".join(ctx.args)
             target = None
         await self._run_check(update, ctx, text, message=target, track="news")
+
+    async def cmd_factcacheflush(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        user_id = getattr(update.effective_user, 'id', None)
+        if not is_factcheck_admin(user_id):
+            try:
+                await update.effective_message.reply_text(
+                    self._tr("factcacheflush_denied", "You are not authorized to perform this action."),
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+            return
+        fetcher = getattr(self.fc, 'fetcher', None)
+        if not fetcher or not hasattr(fetcher, 'flush_cache'):
+            await update.effective_message.reply_text(self._tr("factcacheflush_not_available", "Cache fetcher not available."))
+            return
+        count = fetcher.flush_cache()
+        await update.effective_message.reply_text(
+            self._tr("factcacheflush_ok", f"Fact-check URL cache flushed ({count} entries persisted).")
+        )
 
     async def _run_check(
         self,
@@ -1135,3 +1261,10 @@ class FactCheckBot:
             debug_data = "{}"
         update_str = f"chat={update.effective_chat.id} msg={update.effective_message.message_id}"
         print(f"Satire decision {dec.decision} for {update_str}: {debug_data}")
+
+
+# Shared admin utility
+def is_factcheck_admin(user_id: Optional[int]) -> bool:
+    if user_id is None:
+        return False
+    return user_id in getattr(config, 'FACTCHECK_ADMIN_USER_IDS', set())

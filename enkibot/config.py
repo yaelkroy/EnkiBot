@@ -83,6 +83,18 @@ DEFAULT_SPAM_VOTE_THRESHOLD = int(os.getenv('ENKI_BOT_SPAM_VOTE_THRESHOLD', '3')
 SPAM_VOTE_TIME_WINDOW_MINUTES = int(os.getenv('ENKI_BOT_SPAM_VOTE_WINDOW_MINUTES', '60'))
 REPORTS_CHANNEL_ID = int(os.getenv('ENKI_BOT_REPORTS_CHANNEL_ID')) if os.getenv('ENKI_BOT_REPORTS_CHANNEL_ID') else None
 
+# Fact-check / maintenance admin user IDs (comma-separated Telegram user IDs). Optional.
+_factcheck_admin_ids_raw = os.getenv('ENKI_BOT_FACTCHECK_ADMIN_IDS', '')
+FACTCHECK_ADMIN_USER_IDS = set()
+if _factcheck_admin_ids_raw:
+    try:
+        FACTCHECK_ADMIN_USER_IDS = set(int(x.strip()) for x in _factcheck_admin_ids_raw.split(',') if x.strip())
+    except ValueError:
+        logging.warning("Invalid ENKI_BOT_FACTCHECK_ADMIN_IDS format; ignoring.")
+# Fallback: include REPORTS_CHANNEL_ID if defined (so existing single-admin setups continue to work)
+if REPORTS_CHANNEL_ID:
+    FACTCHECK_ADMIN_USER_IDS.add(REPORTS_CHANNEL_ID)
+
 # NSFW filtering
 NSFW_FILTER_DEFAULT_ENABLED = os.getenv('ENKI_BOT_NSFW_FILTER_DEFAULT', 'false').lower() == 'true'
 NSFW_DETECTION_THRESHOLD = float(os.getenv('ENKI_BOT_NSFW_THRESHOLD', '0.8'))
@@ -180,4 +192,14 @@ FACTCHECK_DOMAIN_BLOCKLIST = set(
     d.strip().lower() for d in os.getenv('ENKI_BOT_FACTCHECK_DOMAIN_BLOCKLIST', 't.me,telegram.me').split(',') if d.strip()
 )
 # Tracking / analytics query parameters to strip from gathered evidence URLs (comma-separated).
-# Supports wildcard prefixes by ending an entry with '*'
+# Supports wildcard prefixes by ending an entry with '*', e.g. 'utm_*' will match utm_source, utm_campaign, etc.
+FACTCHECK_TRACKING_PARAM_BLOCKLIST = [
+    p.strip().lower() for p in os.getenv(
+        'ENKI_BOT_FACTCHECK_TRACKING_PARAMS',
+        'utm_*,ref,referrer,fbclid,gclid,gclsrc,igshid,mc_cid,mc_eid,ga_source,ga_medium,ga_campaign,ga_content'
+    ).split(',') if p.strip()
+]
+# Persistent URL sanitize cache configuration
+FACTCHECK_URL_CACHE_PATH = os.getenv('ENKI_BOT_FACTCHECK_URL_CACHE_PATH', os.path.join(os.getcwd(), 'factcheck_url_cache.json'))
+FACTCHECK_URL_CACHE_MAX_SIZE = int(os.getenv('ENKI_BOT_FACTCHECK_URL_CACHE_MAX', '5000'))
+FACTCHECK_URL_CACHE_PERSIST_INTERVAL_SEC = int(os.getenv('ENKI_BOT_FACTCHECK_URL_CACHE_PERSIST_SEC', '300'))

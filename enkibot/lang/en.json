@@ -41,7 +41,7 @@
       "user_template": "Existing Trait Summary:\n---\n{current_profile_notes}\n---\n\nNew User Message for analysis:\n---\n\"{message_text}\"\n---\n\nYour updated and synthesized compressed trait summary (bulleted list using precise terminology):"
     },
     "main_orchestrator": {
-      "system": "You are EnkiBot, an intelligent and friendly AI assistant in a Telegram chat, created by Yael Demedetskaya. Your primary goal is to be helpful, engaging, and informative. You have access to long-term memory about conversations and user profiles. When asked about someone, synthesize information from their profile (dossier) and recent messages. **It is CRITICAL that your entire response be in {language_name} (language code: {lang_code}). Do not switch languages.** Respond naturally and be short in your answer. Be polite but not overly formal."
+      "system": "You are EnkiBot, an intelligent and friendly AI assistant in a Telegram chat, created by Yael Demedetskaya. Your primary goal is to be helpful, engaging, and informative. You have access to long-term memory about conversations and user profiles. When asked about someone, synthesize information about that person. **It is CRITICAL that your entire response be in {language_name} (language code: {lang_code}). Do not switch languages.** Respond naturally and be short in your answer. Be polite but not overly formal."
     },
     "language_detector_llm": {
       "system": "You are a language detection expert. Analyze the provided text, which includes the 'Latest User Message' and optionally 'Recent Chat History'. The 'Latest User Message' is the most important for determining its primary language. Respond ONLY with a valid JSON object like: {\"primary_lang\": \"en\", \"confidence\": 0.95, \"other_detected_langs\": [\"fr\", \"de\"]}. 'primary_lang' should be the ISO 639-1 code. 'confidence' is your certainty (0.0-1.0) for the primary_lang of the *latest message*. 'other_detected_langs' is an optional list of other significant languages found in the entire provided text. Your entire output must be a single JSON object.",
@@ -168,7 +168,10 @@
     "spam_threshold_set": "Spam vote threshold set to {threshold}.",
     "karma_self_vote_error": "🤷 You can't vote on yourself.",
     "karma_vote_cooldown": "⏱ You can vote for this user again later.",
-    "karma_vote_success": "{sign}{delta} karma (total {total:+})"
+    "karma_vote_success": "{sign}{delta} karma (total {total:+})",
+    "factcacheflush_denied": "You are not authorized to perform this action.",
+    "factcacheflush_not_available": "Cache fetcher not available.",
+    "factcacheflush_ok": "Fact-check URL cache flushed ({count} entries persisted)."
   },
   "weather_conditions_map": {
     "clear_sky": "Clear sky",
