@@ -360,30 +360,45 @@ class Fetcher:
 
 
 class OpenAIWebFetcher(Fetcher):
+    def __init__(self) -> None:
+        # cache original_url -> cleaned_url to avoid repeated parsing
+        self._url_sanitize_cache: Dict[str, str] = {}
+
     async def fact_checker_search(self, claim: Claim) -> List[Evidence]:
         return await self.general_search(claim)
 
     def _sanitize_tracking(self, url: str) -> str:
+        cached = self._url_sanitize_cache.get(url)
+        if cached is not None:
+            return cached
         try:
             from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
             p = urlparse(url)
             if not p.query:
+                self._url_sanitize_cache[url] = url
                 return url
-            # Drop tracking params (utm_*, ref, referrer, fbclid, gclid) and the specific openai source tag
+            patterns = getattr(config, 'FACTCHECK_TRACKING_PARAM_BLOCKLIST', [])
+            wildcard = [pat[:-1] for pat in patterns if pat.endswith('*')]
+            exact = {pat for pat in patterns if not pat.endswith('*')}
             allowed = []
             for k, v in parse_qsl(p.query, keep_blank_values=True):
-                lk = k.lower()
-                if lk.startswith("utm_") or lk in {"ref", "referrer", "fbclid", "gclid", "utm_source"}:
-                    continue
-                # Also skip if value explicitly 'openai'
-                if v.lower() == "openai":
-                    continue
-                allowed.append((k, v))
+                lk = k.lower(); drop = False
+                if lk in exact:
+                    drop = True
+                else:
+                    for pref in wildcard:
+                        if lk.startswith(pref):
+                            drop = True; break
+                if v.lower() == 'openai':
+                    drop = True
+                if not drop:
+                    allowed.append((k, v))
             new_query = urlencode(allowed, doseq=True)
             cleaned = urlunparse((p.scheme, p.netloc, p.path, p.params, new_query, p.fragment))
-            return cleaned
         except Exception:
-            return url.split("?utm_source=openai")[0]
+            cleaned = url.split('?utm_source=openai')[0]
+        self._url_sanitize_cache[url] = cleaned
+        return cleaned
 
     async def general_search(self, claim: Claim) -> List[Evidence]:
         logger.debug("Web fetcher: starting search for claim '%s'", claim.text_norm)
@@ -431,12 +446,23 @@ class OpenAIWebFetcher(Fetcher):
             logger.error("Web fetcher: search failed: %s", e, exc_info=True)
             return []
 
-        # Sanitize tracking parameters early
+        # Sanitize + hash-based dedupe of cleaned URLs
+        seen_url_hashes: set[str] = set()
+        cleaned_items: List[Dict[str, str]] = []
         for it in items:
-            if "url" in it and it["url"]:
-                it["url"] = self._sanitize_tracking(it["url"])  # remove utm / tracking
+            raw = it.get("url")
+            if not raw:
+                continue
+            cleaned = self._sanitize_tracking(raw)
+            h = hashlib.sha256(cleaned.encode('utf-8')).hexdigest()
+            if h in seen_url_hashes:
+                continue
+            seen_url_hashes.add(h)
+            it["url"] = cleaned
+            it["_url_hash"] = h
+            cleaned_items.append(it)
+        items = cleaned_items
 
-        # Trust scoring & re-ranking
         TRUST_BASE: Dict[str, float] = {
             # International agencies
             "reuters.com": 1.0,
@@ -480,13 +506,10 @@ class OpenAIWebFetcher(Fetcher):
         seen_domains: set[str] = set()
         for it in items:
             url = it.get("url")
-            if not url:
-                continue
+            if not url: continue
             dom = (urlparse(url).netloc or url).lower().split(":")[0]
-            if dom.startswith("www."):
-                dom = dom[4:]
-            if dom in seen_domains:
-                continue  # enforce domain diversity
+            if dom.startswith("www."): dom = dom[4:]
+            if dom in seen_domains: continue
             seen_domains.add(dom)
             it["_domain"] = dom
             it["_score"] = domain_score(dom)
@@ -495,28 +518,22 @@ class OpenAIWebFetcher(Fetcher):
 
         evidences: List[Evidence] = []
         for it in ranked[:12]:
-            url = it.get("url")
-            if not url:
-                continue
-            dom = it.get("_domain", "")
-            title = it.get("title", "")
+            url = it.get("url"); dom = it.get("_domain", ""); title = it.get("title", "")
+            if not url: continue
             base_domain = dom.split(':')[0]
             if base_domain in getattr(config, "FACTCHECK_DOMAIN_BLOCKLIST", set()):
                 continue
-            evidences.append(
-                Evidence(
-                    url=url,
-                    domain=base_domain,
-                    stance="support",
-                    note=title or base_domain,
-                    published_at=None,
-                    snapshot_url=None,
-                    tier=None,
-                    score=float(it.get("_score", 0.0)) or 1.0,
-                )
-            )
-            if len(evidences) >= 8:
-                break
+            evidences.append(Evidence(
+                url=url,
+                domain=base_domain,
+                stance="support",
+                note=title or base_domain,
+                published_at=None,
+                snapshot_url=None,
+                tier=None,
+                score=float(it.get("_score", 0.0)) or 1.0,
+            ))
+            if len(evidences) >= 8: break
         return evidences
 
 
